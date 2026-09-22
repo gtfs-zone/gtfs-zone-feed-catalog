@@ -12,6 +12,7 @@ origin outside their peak.
 
 from dagster import (
     AssetSelection,
+    DefaultScheduleStatus,
     Definitions,
     ScheduleDefinition,
     define_asset_job,
@@ -33,6 +34,11 @@ daily_schedule = ScheduleDefinition(
     job=daily_catalog,
     cron_schedule="0 9 * * *",
     execution_timezone="UTC",
+    # Running by default, because the alternative is a toggle that exists only
+    # in Dagster's database: a fresh deploy would come up with the schedule off
+    # and nothing anywhere would say so. This repo has been bitten by
+    # configuration that lives only in a UI's database before.
+    default_status=DefaultScheduleStatus.RUNNING,
 )
 
 defs = Definitions(assets=ALL_ASSETS, jobs=[daily_catalog], schedules=[daily_schedule])
