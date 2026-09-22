@@ -12,6 +12,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.14",
     "psycopg2-binary>=2.9",
+    "pyyaml>=6.0",
     "railroad-club",
 ]
 
@@ -45,6 +46,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "TC", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # Tests take fixtures by name and return nothing worth annotating.
 "tests/**" = ["ANN"]
+# Dagster resolves an asset's upstream dependencies from its parameter
+# annotations at import time, so a name only imported under TYPE_CHECKING is a
+# NameError when the code server loads the module, not a saved import.
+"src/geometry_car/assets/*.py" = ["TC001"]
+# Alembic calls include_object with a fixed positional signature of its own.
+"src/geometry_car/alembic/env.py" = ["ANN001"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

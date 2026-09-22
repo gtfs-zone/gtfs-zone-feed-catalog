@@ -29,7 +29,23 @@ Fill `MOBILITY_DB_REFRESH_TOKEN` in `.env`, and point `TRANSITLAND_ATLAS_PATH`
 at a sibling checkout of `transitland/transitland-atlas` so runs read the DMFR
 corpus from disk rather than the GitHub API.
 
+Without `DATABASE_URL` the run still works and still publishes; it just keeps no
+history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland and the
+curated set alone. Neither is an error, so a first local run needs neither.
+
 Trigger the first run from the Dagster UI rather than waiting for the schedule.
+
+## Migrations
+
+The history tables are this repo's, with this repo's Alembic. Dagster's own run
+and event storage lives in the same database and creates itself, and `env.py`
+filters autogenerate down to this repo's tables so a revision here cannot
+propose dropping any of Dagster's.
+
+```bash
+DATABASE_URL=postgresql://... uv run alembic upgrade head
+DATABASE_URL=postgresql://... uv run alembic revision --autogenerate -m "what changed"
+```
 
 ## Development
 

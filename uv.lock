@@ -613,6 +613,7 @@ dependencies = [
     { name = "httpx" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "railroad-club" },
     { name = "sqlalchemy" },
 ]
@@ -636,6 +637,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "railroad-club", git = "https://git.kcfam.us/gtfs.zone/railroad-club.git" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]

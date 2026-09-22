@@ -8,15 +8,16 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # Check history and Dagster run storage. Same database, separate schemas;
-    # the tables here are owned by this repo's Alembic, not railroad-club's.
+    # Check history and Dagster run storage, in one database. Dagster owns and
+    # creates its own tables; `source`, `check_run` and `source_state` are this
+    # repo's, under this repo's Alembic, and collide with none of Dagster's.
     database_url: str = ""
 
     # A local checkout of the DMFR corpus is preferred in development; empty
     # falls back to the GitHub tree API, which is what runs in the cluster.
     transitland_atlas_path: str = ""
     transitland_atlas_repo: str = "transitland/transitland-atlas"
-    transitland_atlas_ref: str = "master"
+    transitland_atlas_ref: str = "main"
 
     # Long-lived refresh token, exchanged for a short-lived access token at the
     # start of each run. Never logged, at either end of the exchange.

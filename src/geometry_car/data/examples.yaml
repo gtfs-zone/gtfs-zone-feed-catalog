@@ -1,0 +1,242 @@
+# Curated, ready-to-load feeds. Moved here from interlocking/src/gtfs/examples.ts
+# so the same daily reachability check that covers the catalogs covers these too.
+#
+# Most entries name both a scheduled source and a realtime source, so picking
+# one satisfies the realtime app's load requirement in one click. An entry may
+# leave `realtime` out when the agency publishes no GTFS-RT at all: it is still
+# a complete choice for the schedule editor, and in the realtime app it fills
+# the scheduled slot and leaves the other for you.
+#
+# Feeds served by our own stack use **path-only** realtime URLs. Those resolve
+# against each app's RT base at fetch time (`feed-url-resolve.ts`): the local
+# cafe-car in dev, rt.gtfs.zone in the built site. So there is no separate set
+# of "local" examples to keep in sync, and a link someone shares works wherever
+# it is opened. `use_cors: true` is correct for both halves of that: the proxy
+# is what rt.gtfs.zone needs in prod, and `maybeProxy` bypasses it for the local
+# host in dev. Feeds hosted by an agency stay absolute, since there is no single
+# origin to resolve them against. A path-only URL is also not checkable from
+# here, and is reported as skipped rather than failing.
+#
+# `use_cors` is otherwise set per source from what the origin actually sends.
+# Only `raw.githubusercontent.com` sends `access-control-allow-origin: *`, so a
+# GitHub-hosted zip must point there directly and needs no proxy - a
+# `github.com/**/raw/**` URL is never directly fetchable (it 301/302s through
+# hops that send no usable CORS header, which the browser aborts) and must be
+# rewritten to `raw.githubusercontent.com` or proxied. rt.gtfs.zone,
+# cdn.mbta.com and content.amtrak.com send no CORS headers, so they proxy.
+#
+# Several agency feeds below are plain `http://`, which an https page blocks as
+# mixed content. They are only usable *because* they proxy: `maybeProxy`
+# produces `https://cors.kcfam.us/http://...`, and the plain-http hop happens
+# server-side. An http entry must therefore never be published with
+# `use_cors: false`.
+#
+# Two of these hosts (ripta.com, opendata.burlington.ca) refuse a bare request
+# outright but answer the proxy, so "it 403s in curl" is not evidence that an
+# entry is dead - check it the way the app fetches it. The daily check here is
+# a bare request, so those entries are expected to read as unreachable while
+# still being perfectly usable; their `note` says so, and the note is published.
+
+examples:
+  - slug: amtrak
+    name: Amtrak
+    description: National rail - schedule from Amtrak, realtime via rt.gtfs.zone
+    scheduled:
+      url: https://content.amtrak.com/content/gtfs/GTFS.zip
+      use_cors: true
+      label: Amtrak
+    realtime:
+      vehicles: /amtrak/vehicle_positions.pb
+      trip_updates: /amtrak/trip_updates.pb
+      alerts: /amtrak/service_alerts.pb
+      use_cors: true
+      label: Amtrak RT
+
+  - slug: columbia-county
+    name: Columbia County
+    description: Columbia County Public Transportation, NY - realtime via rt.gtfs.zone
+    note: >-
+      The scheduled URL points at raw.githubusercontent.com deliberately. It is
+      the one host that sends access-control-allow-origin, so this entry needs
+      no proxy; a github.com/**/raw/** URL in its place would be unfetchable.
+    scheduled:
+      url: https://raw.githubusercontent.com/columbia-county-ny-transit/gtfs-generator/refs/heads/main/columbia_county_gtfs.zip
+      use_cors: false
+      label: Columbia County
+    realtime:
+      vehicles: /columbia-county/vehicle_positions.pb
+      trip_updates: /columbia-county/trip_updates.pb
+      alerts: /columbia-county/service_alerts.pb
+      use_cors: true
+      label: Columbia County RT
+
+  - slug: mbta
+    name: MBTA
+    description: Boston - three separate realtime .pb files straight from the agency
+    scheduled:
+      url: https://cdn.mbta.com/MBTA_GTFS.zip
+      use_cors: true
+      label: MBTA
+    realtime:
+      vehicles: https://cdn.mbta.com/realtime/VehiclePositions.pb
+      trip_updates: https://cdn.mbta.com/realtime/TripUpdates.pb
+      alerts: https://cdn.mbta.com/realtime/Alerts.pb
+      use_cors: true
+      label: MBTA RT
+
+  - slug: septa
+    name: SEPTA
+    description: Philadelphia - bus feed nested inside the public GTFS release zip
+    note: >-
+      The one entry that exercises the nested-zip syntax: SEPTA ships
+      google_bus.zip and google_rail.zip inside a single release asset, so the
+      outer URL alone does not say which feed is meant. The `#google_bus.zip`
+      fragment is the app's, not the server's, and is stripped before a request.
+      No alerts endpoint - SEPTA publishes Vehicle and Trip only.
+    scheduled:
+      url: https://github.com/septadev/GTFS/releases/latest/download/gtfs_public.zip#google_bus.zip
+      use_cors: true
+      label: SEPTA
+    realtime:
+      vehicles: https://www3.septa.org/gtfsrt/septa-pa-us/Vehicle/rtVehiclePosition.pb
+      trip_updates: https://www3.septa.org/gtfsrt/septa-pa-us/Trip/rtTripUpdates.pb
+      use_cors: true
+      label: SEPTA RT
+
+  - slug: grand-poitiers
+    name: Grand Poitiers
+    description: Poitiers, France - Cadavl-hosted schedule and realtime
+    scheduled:
+      url: https://gtfs.gptd.cadavl.com/GPTD/GTFS/GTFS_GPTD.zip
+      use_cors: true
+      label: Grand Poitiers
+    realtime:
+      vehicles: https://gtfsrt.gptd.cadavl.com/ProfilGtfsRt2_0RSProducer-GPTD/VehiclePosition.pb
+      trip_updates: https://gtfsrt.gptd.cadavl.com/ProfilGtfsRt2_0RSProducer-GPTD/TripUpdate.pb
+      alerts: https://gtfsrt.gptd.cadavl.com/ProfilGtfsRt2_0RSProducer-GPTD/Alert.pb
+      use_cors: true
+      label: Grand Poitiers RT
+
+  - slug: divia
+    name: Divia
+    description: Dijon, France - schedule via data.gouv.fr, realtime via transport.data.gouv.fr
+    note: >-
+      The scheduled half is a data.gouv.fr resource id, so the URL names no file
+      and has no .zip extension - it is one all the same. Do not judge this
+      entry by its content-type or its lack of an extension.
+    scheduled:
+      url: https://www.data.gouv.fr/fr/datasets/r/e0dbd217-15cd-4e28-9459-211a27511a34
+      use_cors: true
+      label: Divia
+    realtime:
+      vehicles: https://proxy.transport.data.gouv.fr/resource/divia-dijon-gtfs-rt-vehicle-position
+      trip_updates: https://proxy.transport.data.gouv.fr/resource/divia-dijon-gtfs-rt-trip-update
+      use_cors: true
+      label: Divia RT
+
+  - slug: ripta
+    name: RIPTA
+    description: Rhode Island - realtime on port 81
+    note: >-
+      ripta.com 403s a bare request and the realtime host is http on a
+      non-standard port; both are fine through the proxy. A failing check here
+      is expected and is not evidence the entry is dead.
+    scheduled:
+      url: https://ripta.com/RIPTA-GTFS.zip
+      use_cors: true
+      label: RIPTA
+    realtime:
+      vehicles: http://realtime.ripta.com:81/api/vehiclepositions?format=gtfs.proto
+      trip_updates: http://realtime.ripta.com:81/api/tripupdates?format=gtfs.proto
+      alerts: http://realtime.ripta.com:81/api/servicealerts?format=gtfs.proto
+      use_cors: true
+      label: RIPTA RT
+
+  - slug: wcta
+    name: WCTA
+    description: Whatcom County, WA - an Avail InfoPoint deployment
+    scheduled:
+      url: https://wcta.rideralerts.com/InfoPoint/gtfs-zip.ashx
+      use_cors: true
+      label: WCTA
+    realtime:
+      vehicles: https://wcta.rideralerts.com/InfoPoint/gtfs-realtime.ashx?type=vehicleposition
+      trip_updates: https://wcta.rideralerts.com/InfoPoint/gtfs-realtime.ashx?type=tripupdate
+      alerts: https://wcta.rideralerts.com/InfoPoint/gtfs-realtime.ashx?type=alert
+      use_cors: true
+      label: WCTA RT
+
+  - slug: lcta
+    name: LCTA
+    description: Luzerne County, PA - another Avail InfoPoint deployment
+    scheduled:
+      url: https://realtimelctabus.availtec.com/InfoPoint/gtfs-zip.ashx
+      use_cors: true
+      label: LCTA
+    realtime:
+      vehicles: https://realtimelctabus.availtec.com/InfoPoint/GTFS-Realtime.ashx?Type=VehiclePosition
+      trip_updates: https://realtimelctabus.availtec.com/InfoPoint/GTFS-Realtime.ashx?Type=TripUpdate
+      alerts: https://realtimelctabus.availtec.com/InfoPoint/GTFS-Realtime.ashx?Type=Alert
+      use_cors: true
+      label: LCTA RT
+
+  - slug: burlington-transit
+    name: Burlington Transit
+    description: Burlington, Ontario - city open-data portal
+    note: >-
+      opendata.burlington.ca refuses connections from some networks outright but
+      answers the proxy; do not read a curl timeout, or a failing check here, as
+      a dead feed.
+    scheduled:
+      url: https://opendata.burlington.ca/gtfs-rt/GTFS_Data.zip
+      use_cors: true
+      label: Burlington Transit
+    realtime:
+      vehicles: https://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb
+      trip_updates: https://opendata.burlington.ca/gtfs-rt/GTFS_TripUpdates.pb
+      alerts: https://opendata.burlington.ca/gtfs-rt/GTFS_ServiceAlerts.pb
+      use_cors: true
+      label: Burlington Transit RT
+
+  - slug: big-blue-bus
+    name: Big Blue Bus
+    description: Santa Monica, CA - realtime served as .bin, over plain http
+    note: >-
+      Plain http throughout, so only usable because it proxies; never publish
+      this entry with use_cors false.
+    scheduled:
+      url: http://gtfs.bigbluebus.com/current.zip
+      use_cors: true
+      label: Big Blue Bus
+    realtime:
+      vehicles: http://gtfs.bigbluebus.com/vehiclepositions.bin
+      trip_updates: http://gtfs.bigbluebus.com/tripupdates.bin
+      alerts: http://gtfs.bigbluebus.com/alerts.bin
+      use_cors: true
+      label: Big Blue Bus RT
+
+  - slug: london-transit
+    name: London Transit
+    description: London, Ontario - schedule and realtime on separate http hosts
+    note: >-
+      Plain http on both hosts, so only usable because it proxies; never publish
+      this entry with use_cors false.
+    scheduled:
+      url: http://www.londontransit.ca/gtfsfeed/google_transit.zip
+      use_cors: true
+      label: London Transit
+    realtime:
+      vehicles: http://gtfs.ltconline.ca/Vehicle/VehiclePositions.pb
+      trip_updates: http://gtfs.ltconline.ca/TripUpdate/TripUpdates.pb
+      alerts: http://gtfs.ltconline.ca/Alert/Alerts.pb
+      use_cors: true
+      label: London Transit RT
+
+  - slug: west-bus-service
+    name: West Bus Service
+    description: Vermont - small hand-maintained feed, schedule only
+    note: Schedule only - the operator publishes no GTFS-RT.
+    scheduled:
+      url: https://westbusservice.com/west_gtfs.zip
+      use_cors: true
+      label: West Bus Service

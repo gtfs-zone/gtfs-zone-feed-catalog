@@ -19,6 +19,7 @@ ruff check .         # lint
 ruff format .        # format
 uv run pytest        # tests
 uv run dagster dev   # run the pipeline locally, UI on :3000
+uv run alembic upgrade head   # migrate the history tables (needs DATABASE_URL)
 pre-commit install   # install git hooks
 ```
 
@@ -30,11 +31,13 @@ order:
 | Asset | What it does |
 |---|---|
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
-| `mobility_database` | Exchange the refresh token for an access token, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
+| `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
 | `curated_examples` | The hand-curated set, as declarative source data in `data/examples.yaml` |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL |
-| `check_history` | Postgres, this repo's own Alembic migrations, plus retention |
+| `check_history` | Fold the checks into one answer per source; record state changes in Postgres |
+| `history_retention` | Delete `source_state` and absent `source` rows past their window |
+| `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
 Storage is shaped so it does not grow with feeds x days: `source_state` holds
@@ -82,6 +85,16 @@ unplaced count is published and shown, not hidden.
   snapshot, and snapshots are written only when the content hash changes.
 - Tests run against no services. `respx` for HTTP, `moto` for the bucket,
   SQLite with `StaticPool` for the history tables.
+- An asset's parameter annotations are resolved by Dagster at import time, so a
+  type an asset signature names must be imported at runtime, never under
+  `TYPE_CHECKING`, and the module must not use `from __future__ import
+  annotations` if it annotates `context`. Both failures are import-time, loud.
+- `geometry_car/assets/__init__.py` stays empty of imports on purpose:
+  re-exporting the asset objects shadows the submodule names, and then anything
+  addressing a module by its dotted path gets the asset instead.
+- Both catalogs list many of the same feeds. They are cross-linked by normalized
+  URL (`same_endpoint_as`), never merged - merging means picking whose id and
+  name win and silently losing the loser.
 
 ## Related Repos
 
