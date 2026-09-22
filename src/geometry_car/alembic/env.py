@@ -7,6 +7,12 @@ psycopg2 and a migration has no reason to be either.
 and schedule tables in the same database and creates them itself. Without the
 filter, an autogenerate run here would cheerfully write a migration dropping all
 of them.
+
+``VERSION_TABLE`` is the other half of sharing a database with Dagster. Dagster
+migrates itself with Alembic too, and it records its revision in the default
+``alembic_version``. Reading that table here finds a revision from Dagster's
+history and fails with "Can\'t locate revision identified by ...", which says
+nothing about the real cause.
 """
 
 import os
@@ -26,6 +32,8 @@ target_metadata = Base.metadata
 
 OUR_TABLES = set(target_metadata.tables)
 
+VERSION_TABLE = "alembic_version_geometry_car"
+
 
 def include_object(_object, name, type_, _reflected, _compare_to) -> bool:
     if type_ == "table":
@@ -43,6 +51,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         include_object=include_object,
+        version_table=VERSION_TABLE,
         dialect_opts={"paramstyle": "named"},
     )
     with context.begin_transaction():
@@ -60,6 +69,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_object=include_object,
+            version_table=VERSION_TABLE,
         )
         with context.begin_transaction():
             context.run_migrations()

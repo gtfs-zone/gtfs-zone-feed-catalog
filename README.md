@@ -40,7 +40,9 @@ Trigger the first run from the Dagster UI rather than waiting for the schedule.
 The history tables are this repo's, with this repo's Alembic. Dagster's own run
 and event storage lives in the same database and creates itself, and `env.py`
 filters autogenerate down to this repo's tables so a revision here cannot
-propose dropping any of Dagster's.
+propose dropping any of Dagster's. Dagster migrates itself with Alembic too, so
+this repo's revision is recorded in `alembic_version_geometry_car` rather than
+the default `alembic_version`, which is Dagster's.
 
 ```bash
 DATABASE_URL=postgresql://... uv run alembic upgrade head
