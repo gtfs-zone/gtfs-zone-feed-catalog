@@ -27,6 +27,9 @@ RUN groupadd -r bridge && useradd -r -g bridge bridge
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+# alembic.ini resolves script_location relative to the working directory, so the
+# migrate job's `alembic upgrade head` needs it next to src/.
+COPY alembic.ini ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     DAGSTER_HOME=/app/dagster_home

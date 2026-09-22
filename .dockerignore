@@ -1,5 +1,6 @@
 # Only the package and its dependency manifests belong in the build context.
 *
 !pyproject.toml
+!alembic.ini
 !uv.lock
 !src
