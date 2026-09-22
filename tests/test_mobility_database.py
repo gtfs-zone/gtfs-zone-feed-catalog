@@ -72,6 +72,23 @@ def test_paging_stops_on_a_short_page():
     assert feeds[-1]["id"] == "mdb-9999"
 
 
+@respx.mock
+def test_realtime_paging_uses_the_smaller_cap():
+    # gtfs_rt_feeds rejects limit > 1000 with a 422.
+    full = [gtfs_feed(f"rt-{i}", data_type="gtfs_rt") for i in range(1000)]
+    first = respx.get(
+        f"{BASE}/gtfs_rt_feeds", params={"limit": 1000, "offset": 0}
+    ).respond(json=full)
+    second = respx.get(
+        f"{BASE}/gtfs_rt_feeds", params={"limit": 1000, "offset": 1000}
+    ).respond(json=[])
+    with httpx.Client() as client:
+        feeds = list(iter_feeds(client, "gtfs_rt_feeds"))
+    assert len(feeds) == 1000
+    assert first.called
+    assert second.called
+
+
 def test_static_rows_carry_the_centroid_and_the_place():
     rows = build_static_sources([gtfs_feed("mdb-1")])
     assert [r.source_id for r in rows] == ["md:mdb-1:static"]

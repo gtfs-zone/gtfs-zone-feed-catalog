@@ -7,7 +7,8 @@ Two calls' worth of shape worth stating, because both are easy to assume wrong:
   neither it nor the access token is ever logged.
 - ``/v1/gtfs_feeds`` and ``/v1/gtfs_rt_feeds`` return a bare JSON array with
   ``limit``/``offset`` paging and no total in the body, so paging stops on a
-  short page. ``limit`` is capped at 2500 by the schema.
+  short page. ``limit`` is capped per endpoint by the schema: 2500 for
+  ``gtfs_feeds``, 1000 for ``gtfs_rt_feeds``. Over the cap is a 422.
 
 A realtime feed here is one endpoint that declares which entity types it
 carries (``vp``/``tu``/``sa``), not three separate URLs the way DMFR has it, so
@@ -30,7 +31,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-PAGE_SIZE = 2500
+# Largest ``limit`` each endpoint accepts.
+PAGE_SIZES = {"gtfs_feeds": 2500, "gtfs_rt_feeds": 1000}
 
 # GTFS-RT entity type -> the URL role it satisfies.
 ENTITY_ROLES = {"vp": "vehicles", "tu": "trip_updates", "sa": "alerts"}
@@ -57,16 +59,17 @@ def fetch_access_token(client: httpx.Client, refresh_token: str) -> str:
 
 
 def iter_feeds(client: httpx.Client, path: str) -> Iterator[dict]:
+    page_size = PAGE_SIZES[path]
     offset = 0
     while True:
         response = client.get(
             f"{settings.mobility_db_base_url}/{path}",
-            params={"limit": PAGE_SIZE, "offset": offset},
+            params={"limit": page_size, "offset": offset},
         )
         response.raise_for_status()
         page = response.json()
         yield from page
-        if len(page) < PAGE_SIZE:
+        if len(page) < page_size:
             return
         offset += len(page)
 
