@@ -39,17 +39,21 @@ ALLOWED_ORIGINS = [
     "http://localhost:5174",
 ]
 
+# One rule per origin. Garage answers with the matched rule's whole origin list
+# joined by ", " in Access-Control-Allow-Origin, which browsers reject when it
+# holds more than one origin.
 CORS_RULES = {
     "CORSRules": [
         {
             "AllowedMethods": ["GET", "HEAD"],
-            "AllowedOrigins": ALLOWED_ORIGINS,
+            "AllowedOrigins": [origin],
             "AllowedHeaders": ["*"],
             # The hash a consumer compares against lives in the ETag, so a
             # browser has to be allowed to read it.
             "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
             "MaxAgeSeconds": 3600,
         }
+        for origin in ALLOWED_ORIGINS
     ]
 }
 

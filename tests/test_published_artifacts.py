@@ -126,5 +126,6 @@ def test_cors_is_set_on_the_bucket(store):
 
     client = boto3.client("s3", endpoint_url=ENDPOINT, region_name="us-east-1")
     rules = client.get_bucket_cors(Bucket=BUCKET)["CORSRules"]
-    assert rules[0]["AllowedOrigins"] == ALLOWED_ORIGINS
-    assert rules[0]["AllowedMethods"] == ["GET", "HEAD"]
+    # One origin per rule, so Garage never sends a multi-origin header.
+    assert [r["AllowedOrigins"] for r in rules] == [[o] for o in ALLOWED_ORIGINS]
+    assert all(r["AllowedMethods"] == ["GET", "HEAD"] for r in rules)
