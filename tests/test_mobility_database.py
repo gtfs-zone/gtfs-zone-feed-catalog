@@ -89,6 +89,33 @@ def test_realtime_paging_uses_the_smaller_cap():
     assert second.called
 
 
+@respx.mock
+def test_a_record_that_breaks_the_server_is_skipped():
+    # The API 500s on any page containing a bad record, even alone.
+    feeds = [gtfs_feed(f"rt-{i}", data_type="gtfs_rt") for i in range(10)]
+    bad = {3}
+
+    def page(request):
+        limit = int(request.url.params["limit"])
+        offset = int(request.url.params["offset"])
+        window = range(offset, min(offset + limit, len(feeds)))
+        if bad & set(window):
+            return httpx.Response(500)
+        return httpx.Response(200, json=[feeds[i] for i in window])
+
+    respx.get(f"{BASE}/gtfs_rt_feeds").mock(side_effect=page)
+    with httpx.Client() as client:
+        got = [f["id"] for f in iter_feeds(client, "gtfs_rt_feeds")]
+    assert got == [f"rt-{i}" for i in range(10) if i not in bad]
+
+
+@respx.mock
+def test_an_api_that_fails_everywhere_raises():
+    respx.get(f"{BASE}/gtfs_rt_feeds").respond(500)
+    with httpx.Client() as client, pytest.raises(MobilityDatabaseError):
+        list(iter_feeds(client, "gtfs_rt_feeds"))
+
+
 def test_static_rows_carry_the_centroid_and_the_place():
     rows = build_static_sources([gtfs_feed("mdb-1")])
     assert [r.source_id for r in rows] == ["md:mdb-1:static"]

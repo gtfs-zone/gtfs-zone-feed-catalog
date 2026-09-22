@@ -9,6 +9,9 @@ Two calls' worth of shape worth stating, because both are easy to assume wrong:
   ``limit``/``offset`` paging and no total in the body, so paging stops on a
   short page. ``limit`` is capped per endpoint by the schema: 2500 for
   ``gtfs_feeds``, 1000 for ``gtfs_rt_feeds``. Over the cap is a 422.
+- A single bad record makes the server 500 on every page that contains it,
+  even at ``limit=1``. A failing page is split in half until the bad records
+  are isolated, and those are skipped and logged.
 
 A realtime feed here is one endpoint that declares which entity types it
 carries (``vp``/``tu``/``sa``), not three separate URLs the way DMFR has it, so
@@ -58,20 +61,47 @@ def fetch_access_token(client: httpx.Client, refresh_token: str) -> str:
     return token
 
 
+def fetch_window(
+    client: httpx.Client, url: str, limit: int, offset: int
+) -> tuple[list[dict], int, bool]:
+    """Rows in ``[offset, offset + limit)``, the count skipped, and end-of-list.
+
+    On a 5xx the window is halved and each half fetched on its own, down to
+    single records; a record that still fails alone is skipped.
+    """
+    response = client.get(url, params={"limit": limit, "offset": offset})
+    if response.is_server_error:
+        if limit == 1:
+            log.warning(
+                "skipping %s offset %d: HTTP %d", url, offset, response.status_code
+            )
+            return [], 1, False
+        half = limit // 2
+        rows, skipped, exhausted = fetch_window(client, url, half, offset)
+        if exhausted:
+            return rows, skipped, True
+        more, more_skipped, exhausted = fetch_window(
+            client, url, limit - half, offset + half
+        )
+        return rows + more, skipped + more_skipped, exhausted
+    response.raise_for_status()
+    page = response.json()
+    return page, 0, len(page) < limit
+
+
 def iter_feeds(client: httpx.Client, path: str) -> Iterator[dict]:
+    url = f"{settings.mobility_db_base_url}/{path}"
     page_size = PAGE_SIZES[path]
     offset = 0
     while True:
-        response = client.get(
-            f"{settings.mobility_db_base_url}/{path}",
-            params={"limit": page_size, "offset": offset},
-        )
-        response.raise_for_status()
-        page = response.json()
-        yield from page
-        if len(page) < page_size:
+        rows, skipped, exhausted = fetch_window(client, url, page_size, offset)
+        if skipped == page_size:
+            # Every record failed: the API is down, not one bad row.
+            raise MobilityDatabaseError(f"{path} failed at every offset from {offset}")
+        yield from rows
+        if exhausted:
             return
-        offset += len(page)
+        offset += page_size
 
 
 def place_of(feed: dict) -> Place:
