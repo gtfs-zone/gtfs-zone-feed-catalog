@@ -133,8 +133,13 @@ def record(
             seen.add(row.source_id)
             current = existing.get(row.source_id)
             if current is None:
+                # Column defaults apply at INSERT, not construction, so the
+                # counter read below is set here.
                 current = SourceRecord(
-                    source_id=row.source_id, first_seen=now, state=UNKNOWN
+                    source_id=row.source_id,
+                    first_seen=now,
+                    state=UNKNOWN,
+                    consecutive_failures=0,
                 )
                 session.add(current)
 

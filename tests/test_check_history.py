@@ -93,6 +93,17 @@ def test_going_down_and_back_writes_two_more_rows_and_counts_failures(session_fa
         assert session.get(SourceRecord, "tl:f-a:rt").consecutive_failures == 0
 
 
+def test_a_source_down_the_first_time_it_is_seen_counts_one_failure(session_factory):
+    row = rt_row(vehicles="https://example.org/vp.pb")
+    down = {
+        "https://example.org/vp.pb": result(
+            "https://example.org/vp.pb", ok=False, status=500
+        )
+    }
+    statuses = record([row], fold([row], down), NOW)
+    assert statuses["tl:f-a:rt"].consecutive_failures == 1
+
+
 def test_a_source_the_catalogs_drop_stops_being_present(session_factory):
     row = rt_row(vehicles="https://example.org/vp.pb")
     record([row], fold([row], {}), NOW)
