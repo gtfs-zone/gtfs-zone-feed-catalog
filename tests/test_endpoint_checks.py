@@ -1,6 +1,7 @@
 """The checker: HEAD, the GET fallback, redirects and what is not checked."""
 
 import asyncio
+import time
 
 import httpx
 import respx
@@ -12,6 +13,7 @@ from geometry_car.assets.endpoint_checks import (
     run_checks,
 )
 from geometry_car.catalog import Source
+from geometry_car.settings import settings
 
 
 def check(url: str) -> dict:
@@ -176,3 +178,29 @@ def test_a_malformed_url_is_not_a_crash_when_building_targets():
         urls={"scheduled": "http://example.org:notaport/feed.zip"},
     )
     check_targets([row])
+
+
+@respx.mock
+def test_a_busy_host_does_not_starve_the_others(impatient, monkeypatch):
+    # Queued behind one host, its tasks must not hold every global slot.
+    monkeypatch.setattr(settings, "check_concurrency", 2)
+    finished: dict[str, float] = {}
+
+    async def slow(request):
+        await asyncio.sleep(0.2)
+        finished[str(request.url)] = time.monotonic()
+        return httpx.Response(200)
+
+    async def fast(request):
+        finished[str(request.url)] = time.monotonic()
+        return httpx.Response(200)
+
+    busy = [f"https://busy.example/{i}.zip" for i in range(5)]
+    for url in busy:
+        respx.head(url).mock(side_effect=slow)
+    respx.head("https://quiet.example/feed.zip").mock(side_effect=fast)
+
+    started = time.monotonic()
+    targets = {u: u for u in [*busy, "https://quiet.example/feed.zip"]}
+    asyncio.run(run_checks(targets))
+    assert finished["https://quiet.example/feed.zip"] - started < 0.15

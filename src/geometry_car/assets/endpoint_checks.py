@@ -108,15 +108,22 @@ class _Politeness:
 
 
 async def _check_one(
-    client: httpx.AsyncClient, url: str, politeness: _Politeness
+    client: httpx.AsyncClient,
+    url: str,
+    politeness: _Politeness,
+    slots: asyncio.Semaphore,
 ) -> CheckResult:
     # A fragment is the app's own nested-zip selector, never the server's.
     request_url = url.split("#", 1)[0].strip()
     host = host_of(request_url)
-    started = time.monotonic()
 
+    # Host lock first, global slot second: a task queued behind a busy host
+    # must not hold one of the global slots while it waits.
     async with politeness.lock(host):
         await politeness.wait(host)
+        await slots.acquire()
+        # Latency is the request alone, not the time spent queued.
+        started = time.monotonic()
         try:
             response = await client.head(request_url)
             method = "HEAD"
@@ -136,6 +143,7 @@ async def _check_one(
                 method="HEAD",
             )
         finally:
+            slots.release()
             politeness.done(host)
 
     status = response.status_code
@@ -210,7 +218,7 @@ def check_targets(rows: list[Source]) -> tuple[dict[str, str], dict[str, CheckRe
 
 async def run_checks(targets: dict[str, str]) -> dict[str, CheckResult]:
     politeness = _Politeness(settings.check_per_host_delay_seconds)
-    limit = asyncio.Semaphore(settings.check_concurrency)
+    slots = asyncio.Semaphore(settings.check_concurrency)
     timeout = httpx.Timeout(settings.check_timeout_seconds)
 
     async with httpx.AsyncClient(
@@ -223,8 +231,7 @@ async def run_checks(targets: dict[str, str]) -> dict[str, CheckResult]:
     ) as client:
 
         async def one(key: str, url: str) -> tuple[str, CheckResult]:
-            async with limit:
-                return key, await _check_one(client, url, politeness)
+            return key, await _check_one(client, url, politeness, slots)
 
         results = await asyncio.gather(*(one(k, u) for k, u in targets.items()))
 
