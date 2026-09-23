@@ -15,17 +15,16 @@ Redirects are followed, and a final URL that differs from the requested one is
 recorded: a catalog entry pointing at a 301 is itself a finding.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import islice, zip_longest
 
 import httpx
-from dagster import asset
+from dagster import Config, asset
 
 from geometry_car.catalog import Source
 from geometry_car.settings import settings
@@ -238,9 +237,35 @@ async def run_checks(targets: dict[str, str]) -> dict[str, CheckResult]:
     return dict(results)
 
 
+class EndpointChecksConfig(Config):
+    """Run config for a trial run."""
+
+    # Check at most this many endpoints, spread across hosts; 0 checks all.
+    # The rest fold to unknown, so everything downstream still sees the full
+    # catalog.
+    limit: int = 0
+
+
+def sample_targets(targets: dict[str, str], limit: int) -> dict[str, str]:
+    """Up to ``limit`` targets, taking each host's first URL before any second."""
+    by_host: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for key, url in targets.items():
+        by_host[host_of(url.split("#", 1)[0].strip())].append((key, url))
+    rounds = zip_longest(*by_host.values())
+    picked = (item for round_ in rounds for item in round_ if item is not None)
+    return dict(islice(picked, limit))
+
+
 @asset(description="Reachability of every distinct endpoint, keyed by normalized URL")
-def endpoint_checks(sources: list[Source]) -> dict[str, CheckResult]:
+def endpoint_checks(
+    config: EndpointChecksConfig, sources: list[Source]
+) -> dict[str, CheckResult]:
     targets, skipped = check_targets(sources)
+    if config.limit:
+        log.warning(
+            "trial run: checking %d of %d endpoints", config.limit, len(targets)
+        )
+        targets = sample_targets(targets, config.limit)
     log.info("checking %d distinct endpoints, skipping %d", len(targets), len(skipped))
 
     results = asyncio.run(run_checks(targets))

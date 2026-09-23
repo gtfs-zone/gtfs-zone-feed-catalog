@@ -11,6 +11,7 @@ from geometry_car.assets.endpoint_checks import (
     check_targets,
     result_key,
     run_checks,
+    sample_targets,
 )
 from geometry_car.catalog import Source
 from geometry_car.settings import settings
@@ -204,3 +205,9 @@ def test_a_busy_host_does_not_starve_the_others(impatient, monkeypatch):
     targets = {u: u for u in [*busy, "https://quiet.example/feed.zip"]}
     asyncio.run(run_checks(targets))
     assert finished["https://quiet.example/feed.zip"] - started < 0.15
+
+
+def test_a_trial_sample_spreads_across_hosts():
+    targets = {f"a{i}": f"https://a.example/{i}.zip" for i in range(5)}
+    targets |= {"b0": "https://b.example/0.zip", "c0": "https://c.example/0.zip"}
+    assert list(sample_targets(targets, 4)) == ["a0", "b0", "c0", "a1"]

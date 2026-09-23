@@ -43,7 +43,9 @@ class SourceRecord(Base):
     source_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     catalog: Mapped[str] = mapped_column(String(32), nullable=False)
     kind: Mapped[str] = mapped_column(String(8), nullable=False)
-    name: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    # Unbounded: some catalog names are joined operator lists thousands of
+    # characters long.
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # The row's primary endpoint, for reading the table without a join to the
     # published artifact. Not unique: two catalogs may list the same URL.
     download_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
