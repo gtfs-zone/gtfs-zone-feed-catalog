@@ -117,13 +117,16 @@ def publish(
     }
 
 
-@asset(description="sources, status, examples, summary, a snapshot and the manifest")
+@asset(
+    description="sources, status, examples, summary, a snapshot and the manifest",
+    # Ordering only: the CORS rule is in place before anything is published.
+    deps=["bucket_cors"],
+)
 def published_artifacts(
     context: AssetExecutionContext,
     sources: list[Source],
     check_history: dict[str, SourceStatus],
     curated_examples: list[CuratedExample],
-    bucket_cors: None,
 ) -> None:
     store = get_object_store()
     metadata = publish(store, sources, check_history, curated_examples, context.run_id)
