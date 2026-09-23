@@ -32,10 +32,14 @@ def normalize_url(url: str) -> str:
     if not is_absolute(url):
         return ""
 
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        # A malformed host or port; there is nothing to compare.
+        return ""
     scheme = parts.scheme.lower()
-    host = parts.hostname or ""
-    port = parts.port
     netloc = (
         host
         if port is None or str(port) == DEFAULT_PORTS.get(scheme)
@@ -50,5 +54,11 @@ def normalize_url(url: str) -> str:
 
 
 def host_of(url: str) -> str:
-    """The host a request would hit, for per-host rate limiting."""
-    return (urlsplit(url).hostname or "").lower()
+    """The host a request would hit, for per-host rate limiting.
+
+    "" when the URL cannot be parsed; the request itself then fails as a check.
+    """
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""

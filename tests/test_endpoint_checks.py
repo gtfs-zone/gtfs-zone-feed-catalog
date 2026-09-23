@@ -145,3 +145,34 @@ def test_the_nested_zip_fragment_is_not_sent_to_the_server(impatient):
     assert result.ok
     # The result still names the URL as the catalog has it, fragment included.
     assert result.url == url
+
+
+@respx.mock
+def test_surrounding_whitespace_is_not_sent(impatient):
+    # A leading space made httpx read the URL as a relative path.
+    route = respx.head("http://example.org/vp.php").respond(200)
+    url = " http://example.org/vp.php"
+    assert check(url)[result_key(url)].ok
+    assert route.called
+
+
+@respx.mock
+def test_a_url_that_cannot_be_requested_fails_only_itself(impatient):
+    respx.head("https://example.org/ok.zip").respond(200)
+    targets = {"bad": "http://[::1", "good": "https://example.org/ok.zip"}
+    results = asyncio.run(run_checks(targets))
+    assert not results["bad"].ok
+    assert results["bad"].error_class == "other"
+    assert results["good"].ok
+
+
+def test_a_malformed_url_is_not_a_crash_when_building_targets():
+    row = Source(
+        source_id="tl:bad:static",
+        catalog="transitland",
+        feed_id="bad",
+        kind="static",
+        name="Bad",
+        urls={"scheduled": "http://example.org:notaport/feed.zip"},
+    )
+    check_targets([row])

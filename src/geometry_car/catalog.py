@@ -121,6 +121,11 @@ def make_rows(
     can produce both; the Mobility Database gives realtime its own mdb id, so
     it passes the kind suffix it wants in ``feed_id``.
     """
+    # Catalogs carry stray whitespace around URLs; httpx reads a leading space
+    # as a relative path.
+    scheduled, vehicles, trip_updates, alerts = (
+        u.strip() for u in (scheduled, vehicles, trip_updates, alerts)
+    )
     base = {
         "catalog": catalog,
         "feed_id": feed_id,

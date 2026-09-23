@@ -111,7 +111,7 @@ async def _check_one(
     client: httpx.AsyncClient, url: str, politeness: _Politeness
 ) -> CheckResult:
     # A fragment is the app's own nested-zip selector, never the server's.
-    request_url = url.split("#", 1)[0]
+    request_url = url.split("#", 1)[0].strip()
     host = host_of(request_url)
     started = time.monotonic()
 
@@ -123,7 +123,10 @@ async def _check_one(
             if response.status_code in HEAD_REJECTED:
                 response = await _ranged_get(client, request_url)
                 method = "GET"
-        except httpx.HTTPError as exc:
+        except Exception as exc:
+            # One unusable URL is a failed check, never a failed run.
+            if not isinstance(exc, httpx.HTTPError):
+                log.warning("check of %r raised %s: %s", url, type(exc).__name__, exc)
             return CheckResult(
                 url=url,
                 ok=False,
