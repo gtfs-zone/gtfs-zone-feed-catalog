@@ -34,7 +34,12 @@ ALLOWED_ORIGINS = [
     "https://manage.rt.gtfs.zone",
     "https://list.gtfs.zone",
     # Vite dev servers, so a developer reads the live artifacts rather than a
-    # stale local copy.
+    # stale local copy. The apps pin 8080 and Vite moves up when it is taken;
+    # 5173/5174 are Vite's defaults for apps that pin nothing.
+    "http://localhost:8080",
+    "http://localhost:8081",
+    "http://localhost:8082",
+    "http://localhost:8083",
     "http://localhost:5173",
     "http://localhost:5174",
 ]
