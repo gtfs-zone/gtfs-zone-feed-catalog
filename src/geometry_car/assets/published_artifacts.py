@@ -19,6 +19,7 @@ from railroad_club.object_store import ObjectNotFound, ObjectStore, get_object_s
 from geometry_car import artifacts
 from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.curated_examples import CuratedExample
+from geometry_car.assets.feeds import Feed
 from geometry_car.catalog import Source
 from geometry_car.heartbeat import push_heartbeat
 from geometry_car.settings import settings
@@ -37,6 +38,7 @@ def _read_index(store: ObjectStore) -> list[dict]:
 def publish(
     store: ObjectStore,
     sources: list[Source],
+    feeds: list[Feed],
     statuses: dict[str, SourceStatus],
     examples: list[CuratedExample],
     run_id: str,
@@ -48,9 +50,14 @@ def publish(
 
     documents = {
         "sources.json": artifacts.sources_document(sources, statuses, generated_at),
+        "feeds.json": artifacts.feeds_document(feeds, statuses, generated_at),
         "status.json": artifacts.status_document(statuses, generated_at),
-        "examples.json": artifacts.example_document(examples, statuses, generated_at),
-        "summary.json": artifacts.summary_document(sources, statuses, generated_at),
+        "examples.json": artifacts.example_document(
+            examples, statuses, feeds, generated_at
+        ),
+        "summary.json": artifacts.summary_document(
+            sources, statuses, feeds, generated_at
+        ),
     }
     for key, body in documents.items():
         store.put(key, body, content_type=artifacts.ARTIFACT_CONTENT_TYPE)
@@ -111,6 +118,7 @@ def publish(
 
     return {
         "sources": len(sources),
+        "feeds": len(feeds),
         "snapshots": len(index),
         "snapshots_pruned": len(dropped),
         "snapshot_written": int(wrote_snapshot),
@@ -119,18 +127,21 @@ def publish(
 
 
 @asset(
-    description="sources, status, examples, summary, a snapshot and the manifest",
+    description="sources, feeds, status, examples, summary, snapshot and manifest",
     # Ordering only: the CORS rule is in place before anything is published.
     deps=["bucket_cors"],
 )
 def published_artifacts(
     context: AssetExecutionContext,
     sources: list[Source],
+    feeds: list[Feed],
     check_history: dict[str, SourceStatus],
     curated_examples: list[CuratedExample],
 ) -> None:
     store = get_object_store()
-    metadata = publish(store, sources, check_history, curated_examples, context.run_id)
+    metadata = publish(
+        store, sources, feeds, check_history, curated_examples, context.run_id
+    )
     heartbeat = push_heartbeat(settings)
     context.add_output_metadata(
         {"bucket": store.bucket, "heartbeat": heartbeat, **metadata}

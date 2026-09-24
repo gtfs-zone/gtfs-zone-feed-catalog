@@ -11,6 +11,7 @@ from geometry_car import artifacts
 from geometry_car.assets.bucket_cors import ALLOWED_ORIGINS, set_cors
 from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.curated_examples import load_examples
+from geometry_car.assets.feeds import build_feeds
 from geometry_car.assets.published_artifacts import publish
 from geometry_car.catalog import Source
 from tests.conftest import BUCKET, ENDPOINT
@@ -27,15 +28,22 @@ ROWS = [
         urls={"scheduled": "https://example.org/a.zip"},
     )
 ]
+FEEDS = build_feeds(ROWS, {}, {})
 UP = {"tl:f-a:static": SourceStatus("tl:f-a:static", "up", status_code=200)}
 DOWN = {"tl:f-a:static": SourceStatus("tl:f-a:static", "down", status_code=500)}
 
 
 def test_a_first_run_writes_every_artifact(store):
-    metadata = publish(store, ROWS, UP, load_examples(), "run-1", DAY_ONE)
+    metadata = publish(store, ROWS, FEEDS, UP, load_examples(), "run-1", DAY_ONE)
 
     assert metadata["snapshot_written"] == 1
-    for key in ("sources.json", "status.json", "examples.json", "summary.json"):
+    for key in (
+        "sources.json",
+        "feeds.json",
+        "status.json",
+        "examples.json",
+        "summary.json",
+    ):
         assert json.loads(store.get(key))
     assert json.loads(store.get("sources.json"))["sources"][0]["rowId"] == (
         "tl:f-a:static"
@@ -43,8 +51,12 @@ def test_a_first_run_writes_every_artifact(store):
 
     manifest = json.loads(store.get("manifest.json"))
     assert manifest["run_id"] == "run-1"
+    assert json.loads(store.get("feeds.json"))["feeds"][0]["members"] == [
+        "tl:f-a:static"
+    ]
     assert set(manifest["artifacts"]) == {
         "sources.json",
+        "feeds.json",
         "status.json",
         "examples.json",
         "summary.json",
@@ -56,9 +68,9 @@ def test_a_first_run_writes_every_artifact(store):
 
 
 def test_an_unchanged_day_writes_no_second_snapshot(store):
-    publish(store, ROWS, UP, load_examples(), "run-1", DAY_ONE)
+    publish(store, ROWS, FEEDS, UP, load_examples(), "run-1", DAY_ONE)
     metadata = publish(
-        store, ROWS, UP, load_examples(), "run-2", DAY_ONE + timedelta(days=1)
+        store, ROWS, FEEDS, UP, load_examples(), "run-2", DAY_ONE + timedelta(days=1)
     )
 
     assert metadata["snapshot_written"] == 0
@@ -70,9 +82,9 @@ def test_an_unchanged_day_writes_no_second_snapshot(store):
 
 
 def test_a_changed_answer_writes_the_next_snapshot(store):
-    publish(store, ROWS, UP, load_examples(), "run-1", DAY_ONE)
+    publish(store, ROWS, FEEDS, UP, load_examples(), "run-1", DAY_ONE)
     metadata = publish(
-        store, ROWS, DOWN, load_examples(), "run-2", DAY_ONE + timedelta(days=1)
+        store, ROWS, FEEDS, DOWN, load_examples(), "run-2", DAY_ONE + timedelta(days=1)
     )
 
     assert metadata["snapshot_written"] == 1
@@ -90,11 +102,14 @@ def test_snapshot_retention_deletes_the_objects_it_drops(store, monkeypatch):
     monkeypatch.setattr(settings, "snapshot_daily_days", 1)
     monkeypatch.setattr(settings, "snapshot_weekly_days", 1)
 
-    publish(store, ROWS, UP, load_examples(), "run-1", DAY_ONE)
-    publish(store, ROWS, DOWN, load_examples(), "run-2", DAY_ONE + timedelta(days=40))
+    publish(store, ROWS, FEEDS, UP, load_examples(), "run-1", DAY_ONE)
+    publish(
+        store, ROWS, FEEDS, DOWN, load_examples(), "run-2", DAY_ONE + timedelta(days=40)
+    )
     publish(
         store,
         ROWS,
+        FEEDS,
         UP,
         load_examples(),
         "run-3",

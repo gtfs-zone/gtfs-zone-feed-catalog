@@ -41,6 +41,17 @@ order:
 | `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
+The published documents, all shaped in `artifacts.py`:
+
+| Artifact | What it holds |
+|---|---|
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, place. What a load list reads |
+| `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
+| `status.json` | Per-row check facts (code, error, latency, failures, since); also what a snapshot hashes |
+| `examples.json` | The curated set, ready to load, each with the `feedId` its rows landed in |
+| `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
+| `manifest.json` | sha256 and size of every other artifact; written last |
+
 Storage is shaped so it does not grow with feeds x days: `endpoint_state` holds
 one row per **state change**, not per check, so a URL up for a year is one row.
 

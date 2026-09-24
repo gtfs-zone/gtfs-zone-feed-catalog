@@ -53,7 +53,8 @@ class Feed:
     members: tuple[str, ...]
     # (source id, role) for every role a member fills, sorted.
     member_roles: tuple[tuple[str, str], ...]
-    # role -> the members' URLs for it, one per normalized form.
+    # role -> the members' URLs for it, one per normalized form, best first:
+    # answering URLs ahead of the rest, schedules then by Last-Modified.
     urls: dict[str, tuple[str, ...]]
     # role -> up when any of its URLs answers, so a consumer can load it.
     role_state: dict[str, str]
@@ -63,6 +64,8 @@ class Feed:
     # From the best scheduled URL: up first, then the most recently modified.
     static_bytes: int | None = None
     last_modified: datetime | None = None
+    # Roles whose every URL needs an API key we do not hold, so none is checked.
+    auth_roles: tuple[str, ...] = ()
 
 
 class _UnionFind:
@@ -189,28 +192,44 @@ def build_feed(
                 urls[role].setdefault(normalize_url(url) or url, url)
                 member_roles.append((row.source_id, role))
 
+    # Up, then unchecked, then down; within each, the most recently modified.
+    order = {UP: 0, UNKNOWN: 1, DOWN: 2}
+
+    def rank(url: str) -> tuple[int, float]:
+        result = results.get(result_key(url))
+        modified = (result and result.last_modified) or datetime.min.replace(tzinfo=UTC)
+        return (order[_url_state(url, results)], -modified.timestamp())
+
+    # Stable, so ties keep the name order and a rerun lists the same URL first.
+    ranked = {role: sorted(by_key.values(), key=rank) for role, by_key in urls.items()}
     states = {
-        role: [_url_state(url, results) for url in by_key.values()]
-        for role, by_key in urls.items()
+        role: [_url_state(url, results) for url in role_urls]
+        for role, role_urls in ranked.items()
     }
+    auth_roles = tuple(
+        sorted(
+            role
+            for role, role_urls in ranked.items()
+            if all(
+                getattr(results.get(result_key(url)), "error_class", "")
+                == "auth_required"
+                for url in role_urls
+            )
+        )
+    )
 
     place = next(
         (row.place for row in ordered if row.place.placed),
         next((row.place for row in ordered if row.place.country_code), Place()),
     )
 
-    schedules = [
-        result
-        for url in urls.get("scheduled", {}).values()
-        if (result := results.get(result_key(url))) and not result.skipped
-    ]
-    best = min(
-        schedules,
-        key=lambda r: (
-            not r.ok,
-            -(r.last_modified or datetime.min.replace(tzinfo=UTC)).timestamp(),
+    best = next(
+        (
+            result
+            for url in ranked.get("scheduled", [])
+            if (result := results.get(result_key(url))) and not result.skipped
         ),
-        default=None,
+        None,
     )
 
     return Feed(
@@ -218,12 +237,13 @@ def build_feed(
         name=ordered[0].name,
         members=tuple(sorted(row.source_id for row in members)),
         member_roles=tuple(sorted(member_roles)),
-        urls={role: tuple(by_key.values()) for role, by_key in urls.items()},
+        urls={role: tuple(role_urls) for role, role_urls in ranked.items()},
         role_state={role: _any_up(role_states) for role, role_states in states.items()},
         state=_all_up([s for role_states in states.values() for s in role_states]),
         place=place,
         static_bytes=best.content_length if best else None,
         last_modified=best.last_modified if best else None,
+        auth_roles=auth_roles,
     )
 
 

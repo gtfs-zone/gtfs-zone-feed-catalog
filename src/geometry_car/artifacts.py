@@ -9,6 +9,10 @@ shape of what consumers fetch is testable without a bucket.
 consumer moves over by changing where it fetches rather than how it reads. The
 new fields sit alongside in snake_case. ``rowId`` values are now namespaced by
 catalog (`tl:`, `md:`, `curated:`), which is the one deliberate break.
+
+``feeds.json`` is the layer consumers list: one entry per logical feed, which
+references its rows by ``rowId``. ``status.json`` stays per row; a feed's state
+is carried on the feed itself.
 """
 
 from __future__ import annotations
@@ -20,11 +24,12 @@ from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from geometry_car.catalog import ATLAS_URL_KEYS, Source
+from geometry_car.catalog import ATLAS_URL_KEYS, Place, Source
 
 if TYPE_CHECKING:
     from geometry_car.assets.check_history import SourceStatus
     from geometry_car.assets.curated_examples import CuratedExample
+    from geometry_car.assets.feeds import Feed
 
 ARTIFACT_CONTENT_TYPE = "application/json"
 SNAPSHOT_CONTENT_TYPE = "application/gzip"
@@ -43,6 +48,25 @@ def sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def place_fields(place: Place) -> dict[str, Any]:
+    """The place keys a row or feed carries; absent rather than empty."""
+    fields: dict[str, Any] = {}
+    if place.country_code:
+        fields["country_code"] = place.country_code
+    if place.country:
+        fields["country"] = place.country
+    if place.subdivision:
+        fields["subdivision"] = place.subdivision
+    if place.municipality:
+        fields["municipality"] = place.municipality
+    if place.placed:
+        fields["lat"] = round(place.latitude, 5)
+        fields["lon"] = round(place.longitude, 5)
+    if place.bbox:
+        fields["bbox"] = [round(v, 5) for v in place.bbox]
+    return fields
+
+
 def source_row(source: Source, status: SourceStatus | None) -> dict[str, Any]:
     row: dict[str, Any] = {
         "rowId": source.source_id,
@@ -56,20 +80,7 @@ def source_row(source: Source, status: SourceStatus | None) -> dict[str, Any]:
     for role, url in source.urls.items():
         row[ATLAS_URL_KEYS[role]] = url
 
-    place = source.place
-    if place.country_code:
-        row["country_code"] = place.country_code
-    if place.country:
-        row["country"] = place.country
-    if place.subdivision:
-        row["subdivision"] = place.subdivision
-    if place.municipality:
-        row["municipality"] = place.municipality
-    if place.placed:
-        row["lat"] = round(place.latitude, 5)
-        row["lon"] = round(place.longitude, 5)
-    if place.bbox:
-        row["bbox"] = [round(v, 5) for v in place.bbox]
+    row |= place_fields(source.place)
 
     if source.same_endpoint_as:
         row["same_endpoint_as"] = list(source.same_endpoint_as)
@@ -94,6 +105,53 @@ def sources_document(
             "generated_at": generated_at.isoformat(),
             "count": len(sources),
             "sources": [source_row(s, statuses.get(s.source_id)) for s in sources],
+        }
+    )
+
+
+def feed_since(feed: Feed, statuses: dict[str, SourceStatus]) -> datetime | None:
+    """When the feed's overall state was reached, from its rows' histories.
+
+    Up since its last row came up; down since its earliest still-down row went
+    down. Null until the history has been written at least once.
+    """
+    members = [statuses[m] for m in feed.members if m in statuses]
+    sinces = [s.since for s in members if s.state == feed.state and s.since]
+    if not sinces:
+        return None
+    return max(sinces) if feed.state == "up" else min(sinces)
+
+
+def feed_entry(feed: Feed, statuses: dict[str, SourceStatus]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "feedId": feed.feed_id,
+        "name": feed.name,
+        "members": list(feed.members),
+        "state": feed.state,
+        "roleState": dict(feed.role_state),
+        # role -> URLs, best first. The first is the one to load; its size and
+        # Last-Modified are the ones published for a schedule.
+        "urls": {role: list(urls) for role, urls in feed.urls.items()},
+    }
+    if feed.auth_roles:
+        entry["auth"] = list(feed.auth_roles)
+    if feed.static_bytes is not None:
+        entry["staticBytes"] = feed.static_bytes
+    if feed.last_modified is not None:
+        entry["lastModified"] = feed.last_modified.isoformat()
+    if (since := feed_since(feed, statuses)) is not None:
+        entry["since"] = since.isoformat()
+    return entry | place_fields(feed.place)
+
+
+def feeds_document(
+    feeds: list[Feed], statuses: dict[str, SourceStatus], generated_at: datetime
+) -> bytes:
+    return dumps(
+        {
+            "generated_at": generated_at.isoformat(),
+            "count": len(feeds),
+            "feeds": [feed_entry(feed, statuses) for feed in feeds],
         }
     )
 
@@ -131,6 +189,7 @@ def status_document(statuses: dict[str, SourceStatus], generated_at: datetime) -
 def example_document(
     examples: list[CuratedExample],
     statuses: dict[str, SourceStatus],
+    feeds: list[Feed],
     generated_at: datetime,
 ) -> bytes:
     """The curated set in the shape interlocking's FeedSelection already has.
@@ -138,6 +197,7 @@ def example_document(
     Emitted ready to use rather than as raw rows, because the whole point of
     this set is that picking one entry is a complete, working choice.
     """
+    feed_of = {member: feed.feed_id for feed in feeds for member in feed.members}
     entries = []
     for example in examples:
         scheduled = example.scheduled
@@ -181,13 +241,23 @@ def example_document(
         }
         if example.note:
             entry["note"] = example.note
+        # The logical feed the example's rows landed in, so a consumer can
+        # tell which catalog feed it already covers.
+        feed_id = feed_of.get(f"curated:{example.slug}:static") or feed_of.get(
+            f"curated:{example.slug}:rt"
+        )
+        if feed_id:
+            entry["feedId"] = feed_id
         entries.append(entry)
 
     return dumps({"generated_at": generated_at.isoformat(), "examples": entries})
 
 
 def summary_document(
-    sources: list[Source], statuses: dict[str, SourceStatus], generated_at: datetime
+    sources: list[Source],
+    statuses: dict[str, SourceStatus],
+    feeds: list[Feed],
+    generated_at: datetime,
 ) -> bytes:
     by_catalog = Counter(s.catalog for s in sources)
     by_kind = Counter(s.kind for s in sources)
@@ -196,6 +266,7 @@ def summary_document(
     )
     by_country = Counter(s.place.country_code for s in sources if s.place.country_code)
     placed = sum(1 for s in sources if s.place.placed)
+    feeds_placed = sum(1 for feed in feeds if feed.place.placed)
 
     return dumps(
         {
@@ -209,6 +280,13 @@ def summary_document(
             # Published, not hidden: most of the corpus has no coordinates at
             # all, and a map that silently drops them would be a lie.
             "unplaced": len(sources) - placed,
+            "feeds": {
+                "total": len(feeds),
+                "by_state": dict(Counter(feed.state for feed in feeds)),
+                "realtime": sum(1 for feed in feeds if set(feed.urls) - {"scheduled"}),
+                "placed": feeds_placed,
+                "unplaced": len(feeds) - feeds_placed,
+            },
         }
     )
 
