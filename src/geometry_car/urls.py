@@ -62,3 +62,36 @@ def host_of(url: str) -> str:
         return (urlsplit(url).hostname or "").lower()
     except ValueError:
         return ""
+
+
+# Final path segments that name one GTFS-RT entity type, compared lowercased
+# with separators and extension removed.
+RT_ENTITY_SEGMENTS = frozenset(
+    {
+        "vehicles",
+        "vehiclepositions",
+        "trips",
+        "tripupdates",
+        "alerts",
+        "servicealerts",
+    }
+)
+
+
+def rt_sibling_key(url: str) -> str:
+    """The normalized URL minus a final entity-type segment, or "".
+
+    ``https://x/rt/vehicles.pb`` and ``https://x/rt/TripUpdates`` share a key,
+    so an agency that serves each entity type at its own path is recognised as
+    one realtime feed. The query is kept: two feeds behind one path told apart
+    by ``?agency=`` stay apart.
+    """
+    key = normalize_url(url)
+    if not key:
+        return ""
+    parts = urlsplit(key)
+    head, _, last = parts.path.rpartition("/")
+    stem = last.split(".", 1)[0].lower().replace("_", "").replace("-", "")
+    if stem not in RT_ENTITY_SEGMENTS:
+        return ""
+    return urlunsplit((parts.scheme, parts.netloc, head, parts.query, ""))

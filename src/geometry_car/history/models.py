@@ -2,9 +2,13 @@
 
 Forty thousand endpoints checked daily is fifteen million rows a year if every
 check is a row, and nobody ever reads fourteen million of them. So a check
-writes a row only when the answer *changes*: ``source_state`` holds one row per
-transition, and the current answer lives on ``source`` itself. A feed that has
-been up for a year is one row.
+writes a row only when the answer *changes*: ``endpoint_state`` holds one row
+per transition, and the current answer lives on ``endpoint`` itself. A URL that
+has been up for a year is one row.
+
+History is keyed by normalized URL, because the URL is what is checked. A
+catalog row and a logical feed have no state of their own; both derive it from
+their URLs through ``source_endpoint`` and ``feed_member``.
 
 These tables are this repo's, with this repo's Alembic. They share the database
 with Dagster's own run and event storage, which owns its schema and creates it
@@ -16,6 +20,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -60,19 +65,66 @@ class SourceRecord(Base):
     # feed that vanishes for a week and returns does not lose its history.
     present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    __table_args__ = (
+        Index("ix_source_present_last_seen", "present", "last_seen_in_catalog"),
+    )
+
+
+class EndpointRecord(Base):
+    """One checked URL, by normalized form, with the facts of its last check."""
+
+    __tablename__ = "endpoint"
+
+    url: Mapped[str] = mapped_column(Text, primary_key=True)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    # Last run in which a present source listed it; retention reads this.
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
     last_checked: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # up / down / unknown. unknown means nothing about it was checkable, which
-    # is not the same as down.
+    # up / down / unknown. unknown means it was never checkable (an API key we
+    # do not hold), which is not the same as down.
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
     consecutive_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
 
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_class: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    content_type: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Static URLs only; a realtime body's size says nothing useful.
+    content_length: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_modified: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    etag: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    final_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     __table_args__ = (
-        Index("ix_source_present_last_seen", "present", "last_seen_in_catalog"),
-        Index("ix_source_state_current", "state"),
+        Index("ix_endpoint_last_seen", "last_seen"),
+        Index("ix_endpoint_state", "state"),
+    )
+
+
+class SourceEndpoint(Base):
+    """Which URL a source row names for each of its roles."""
+
+    __tablename__ = "source_endpoint"
+
+    source_id: Mapped[str] = mapped_column(
+        String(255),
+        ForeignKey("source.source_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(16), primary_key=True)
+    url: Mapped[str] = mapped_column(
+        Text, ForeignKey("endpoint.url", ondelete="CASCADE"), nullable=False, index=True
     )
 
 
@@ -93,15 +145,15 @@ class CheckRun(Base):
     endpoints_ok: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class SourceState(Base):
-    """One row per *state change*, never one per check."""
+class EndpointState(Base):
+    """One row per *state change* of a URL, never one per check."""
 
-    __tablename__ = "source_state"
+    __tablename__ = "endpoint_state"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source_id: Mapped[str] = mapped_column(
-        String(255),
-        ForeignKey("source.source_id", ondelete="CASCADE"),
+    url: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("endpoint.url", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -114,3 +166,44 @@ class SourceState(Base):
     )
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+
+class FeedRecord(Base):
+    """One logical feed: a transit system, across catalogs and roles.
+
+    The id is persisted so it can go in a shareable URL; see ``assets.feeds``
+    for how it survives regrouping.
+    """
+
+    __tablename__ = "feed"
+
+    feed_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    # False once no current group maps to it. Kept, with its members, for the
+    # retention window so a group that returns gets its old id back.
+    present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (Index("ix_feed_present_last_seen", "present", "last_seen"),)
+
+
+class FeedMember(Base):
+    """A source row's role within a logical feed."""
+
+    __tablename__ = "feed_member"
+
+    feed_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("feed.feed_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        String(255),
+        ForeignKey("source.source_id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(16), primary_key=True)

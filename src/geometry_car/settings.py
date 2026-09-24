@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     )
 
     # Check history and Dagster run storage, in one database. Dagster owns and
-    # creates its own tables; `source`, `check_run` and `source_state` are this
-    # repo's, under this repo's Alembic, and collide with none of Dagster's.
+    # creates its own tables; `source`, `endpoint`, `feed` and the rest of
+    # `history.models` are this repo's, under this repo's Alembic, and collide
+    # with none of Dagster's.
     database_url: str = ""
 
     # A local checkout of the DMFR corpus is preferred in development; empty
@@ -37,7 +38,8 @@ class Settings(BaseSettings):
     )
 
     # Retention. Both are load-bearing: one 40Gi Garage volume holds every
-    # snapshot, and source_state grows with every up/down flap.
+    # snapshot, and endpoint_state grows with every up/down flap. The absent
+    # window covers sources, endpoints and feeds alike.
     state_retention_days: int = 400
     source_absent_retention_days: int = 90
     snapshot_daily_days: int = 30

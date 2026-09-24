@@ -75,6 +75,9 @@ class Source:
     # Source ids in *other* catalogs whose normalized download URL matches this
     # one. Not a merge: both rows stay, cross-referenced.
     same_endpoint_as: tuple[str, ...] = ()
+    # MDB realtime only: the catalog feed ids (mdb-NNNN) of the static feeds
+    # this endpoint describes.
+    feed_references: tuple[str, ...] = ()
     # Free text carried from the curated set, where it is the expensive part.
     note: str = ""
 

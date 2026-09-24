@@ -2,19 +2,25 @@
 
 import asyncio
 import time
+from datetime import UTC, datetime
 
 import httpx
 import respx
 
 from geometry_car.assets.curated_examples import example_sources, load_examples
 from geometry_car.assets.endpoint_checks import (
+    CheckResult,
     check_targets,
+    drop_realtime_sizes,
     result_key,
     run_checks,
     sample_targets,
+    static_keys,
 )
 from geometry_car.catalog import Source
 from geometry_car.settings import settings
+
+NOW = datetime(2026, 9, 1, tzinfo=UTC)
 
 
 def check(url: str) -> dict:
@@ -211,3 +217,87 @@ def test_a_trial_sample_spreads_across_hosts():
     targets = {f"a{i}": f"https://a.example/{i}.zip" for i in range(5)}
     targets |= {"b0": "https://b.example/0.zip", "c0": "https://c.example/0.zip"}
     assert list(sample_targets(targets, 4)) == ["a0", "b0", "c0", "a1"]
+
+
+@respx.mock
+def test_the_get_fallback_takes_the_size_from_the_content_range_total(impatient):
+    respx.head("https://example.org/feed.zip").respond(403)
+    respx.get("https://example.org/feed.zip").respond(
+        206,
+        headers={"content-range": "bytes 0-0/987654", "content-length": "1"},
+    )
+    result = check("https://example.org/feed.zip")[
+        result_key("https://example.org/feed.zip")
+    ]
+    assert result.method == "GET"
+    # The one byte asked for is not the feed's size.
+    assert result.content_length == 987654
+
+
+@respx.mock
+def test_a_206_with_an_unknown_total_records_no_size(impatient):
+    respx.head("https://example.org/feed.zip").respond(405)
+    respx.get("https://example.org/feed.zip").respond(
+        206, headers={"content-range": "bytes 0-0/*", "content-length": "1"}
+    )
+    result = check("https://example.org/feed.zip")[
+        result_key("https://example.org/feed.zip")
+    ]
+    assert result.content_length is None
+
+
+@respx.mock
+def test_last_modified_and_etag_are_recorded(impatient):
+    respx.head("https://example.org/feed.zip").respond(
+        200,
+        headers={
+            "last-modified": "Wed, 02 Sep 2026 10:00:00 GMT",
+            "etag": '"v42"',
+        },
+    )
+    result = check("https://example.org/feed.zip")[
+        result_key("https://example.org/feed.zip")
+    ]
+    assert result.last_modified is not None
+    assert result.last_modified.isoformat() == "2026-09-02T10:00:00+00:00"
+    assert result.etag == '"v42"'
+
+
+@respx.mock
+def test_an_unparseable_last_modified_is_dropped_not_fatal(impatient):
+    respx.head("https://example.org/feed.zip").respond(
+        200, headers={"last-modified": "yesterday-ish"}
+    )
+    result = check("https://example.org/feed.zip")[
+        result_key("https://example.org/feed.zip")
+    ]
+    assert result.ok
+    assert result.last_modified is None
+
+
+def test_sizes_are_kept_for_static_urls_only():
+    rows = [
+        Source(
+            source_id="tl:f-a:static",
+            catalog="transitland",
+            kind="static",
+            feed_id="f-a",
+            name="A",
+            urls={"scheduled": "https://example.org/g.zip"},
+        ),
+        Source(
+            source_id="tl:f-a:rt",
+            catalog="transitland",
+            kind="rt",
+            feed_id="f-a",
+            name="A",
+            urls={"vehicles": "https://example.org/vp.pb"},
+        ),
+    ]
+    results = {
+        key: CheckResult(url=key, ok=True, checked_at=NOW, content_length=100)
+        for key in ("https://example.org/g.zip", "https://example.org/vp.pb")
+    }
+    kept = drop_realtime_sizes(results, static_keys(rows))
+    assert kept["https://example.org/g.zip"].content_length == 100
+    assert kept["https://example.org/vp.pb"].content_length is None

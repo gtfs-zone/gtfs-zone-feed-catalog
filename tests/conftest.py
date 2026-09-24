@@ -11,11 +11,12 @@ import boto3
 import pytest
 from moto import mock_aws
 from railroad_club.object_store import ObjectStore, ObjectStoreSettings
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from geometry_car.assets import check_history as check_history_module
+from geometry_car.assets import feeds as feeds_module
 from geometry_car.assets import history_retention as retention_module
 from geometry_car.history.models import Base
 from geometry_car.settings import settings
@@ -38,10 +39,17 @@ def session_factory(monkeypatch):
     engine = create_engine(
         "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
+
+    # SQLite ignores foreign keys unless asked, and the cascades are part of
+    # what retention relies on.
+    @event.listens_for(engine, "connect")
+    def _foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
-    for module in (check_history_module, retention_module):
+    for module in (check_history_module, feeds_module, retention_module):
         monkeypatch.setattr(module, "get_session_factory", lambda: factory)
     monkeypatch.setattr(settings, "database_url", "sqlite://")
     return factory

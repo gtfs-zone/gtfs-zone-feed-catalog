@@ -13,20 +13,26 @@ body is never read. No feed contents are stored, ever.
 
 Redirects are followed, and a final URL that differs from the requested one is
 recorded: a catalog entry pointing at a 301 is itself a finding.
+
+Size and ``Last-Modified`` are what let a consumer rank schedules by recency
+without downloading any. Size is kept for static URLs only: a realtime body is
+a snapshot of the moment and its size means nothing.
 """
 
 import asyncio
 import logging
+import re
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from itertools import islice, zip_longest
 
 import httpx
 from dagster import Config, asset
 
-from geometry_car.catalog import Source
+from geometry_car.catalog import STATIC_ROLES, Source
 from geometry_car.settings import settings
 from geometry_car.urls import host_of, normalize_url
 
@@ -46,6 +52,9 @@ log = logging.getLogger(__name__)
 # Statuses that mean "this origin does not do HEAD", not "this feed is gone".
 HEAD_REJECTED = frozenset({400, 401, 403, 404, 405, 406, 409, 429, 500, 501, 502, 503})
 
+# "bytes 0-0/12345"; the total is "*" when the origin does not know it.
+CONTENT_RANGE_TOTAL = re.compile(r"^bytes\s+(?:\d+-\d+|\*)/(\d+)\s*$", re.IGNORECASE)
+
 
 @dataclass(frozen=True, slots=True)
 class CheckResult:
@@ -58,7 +67,10 @@ class CheckResult:
     # Only set when the request landed somewhere other than where it was aimed.
     final_url: str = ""
     content_type: str = ""
+    # The whole body's size, never the size of a ranged GET's one byte.
     content_length: int | None = None
+    last_modified: datetime | None = None
+    etag: str = ""
     latency_ms: int | None = None
     # "" when ok. Otherwise one of: dns, tls, timeout, refused, http_4xx,
     # http_5xx, other - or a skip reason: auth_required, relative.
@@ -148,7 +160,6 @@ async def _check_one(
     status = response.status_code
     ok = status < 400
     final_url = str(response.url)
-    length = response.headers.get("content-length")
     return CheckResult(
         url=url,
         ok=ok,
@@ -156,11 +167,38 @@ async def _check_one(
         status_code=status,
         final_url="" if final_url == request_url else final_url,
         content_type=response.headers.get("content-type", "").split(";")[0].strip(),
-        content_length=int(length) if length and length.isdigit() else None,
+        content_length=body_size(response),
+        last_modified=_http_date(response.headers.get("last-modified", "")),
+        etag=response.headers.get("etag", "").strip(),
         latency_ms=int((time.monotonic() - started) * 1000),
         error_class="" if ok else f"http_{status // 100}xx",
         method=method,
     )
+
+
+def body_size(response: httpx.Response) -> int | None:
+    """The full body's size in bytes, when the response says.
+
+    A 206 answers the ranged GET, whose Content-Length is the one byte asked
+    for; the whole size is the Content-Range total. Any other status (a HEAD,
+    or an origin that ignored the Range header and sent a 200) carries it in
+    Content-Length.
+    """
+    if response.status_code == httpx.codes.PARTIAL_CONTENT:
+        match = CONTENT_RANGE_TOTAL.match(response.headers.get("content-range", ""))
+        return int(match.group(1)) if match else None
+    length = response.headers.get("content-length", "").strip()
+    return int(length) if length.isdigit() else None
+
+
+def _http_date(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 async def _ranged_get(client: httpx.AsyncClient, url: str) -> httpx.Response:
@@ -256,6 +294,27 @@ def sample_targets(targets: dict[str, str], limit: int) -> dict[str, str]:
     return dict(islice(picked, limit))
 
 
+def static_keys(rows: list[Source]) -> set[str]:
+    """Result keys of every URL some row uses as a schedule."""
+    return {
+        result_key(url)
+        for row in rows
+        for role in STATIC_ROLES
+        if (url := row.urls.get(role, ""))
+    }
+
+
+def drop_realtime_sizes(
+    results: dict[str, CheckResult], static: set[str]
+) -> dict[str, CheckResult]:
+    return {
+        key: result
+        if key in static or result.content_length is None
+        else replace(result, content_length=None)
+        for key, result in results.items()
+    }
+
+
 @asset(description="Reachability of every distinct endpoint, keyed by normalized URL")
 def endpoint_checks(
     config: EndpointChecksConfig, sources: list[Source]
@@ -268,7 +327,9 @@ def endpoint_checks(
         targets = sample_targets(targets, config.limit)
     log.info("checking %d distinct endpoints, skipping %d", len(targets), len(skipped))
 
-    results = asyncio.run(run_checks(targets))
+    results = drop_realtime_sizes(
+        asyncio.run(run_checks(targets)), static_keys(sources)
+    )
     results |= skipped
 
     reachable = sum(1 for r in results.values() if r.ok)

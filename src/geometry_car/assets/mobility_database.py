@@ -15,7 +15,9 @@ Two calls' worth of shape worth stating, because both are easy to assume wrong:
 
 A realtime feed here is one endpoint that declares which entity types it
 carries (``vp``/``tu``/``sa``), not three separate URLs the way DMFR has it, so
-every declared role points at the same producer URL.
+every declared role points at the same producer URL. Its ``feed_references``
+names the static feeds it describes, which is what ties an MDB realtime row to
+its schedule when the two share no URL.
 """
 
 from __future__ import annotations
@@ -211,6 +213,7 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
                 catalog="mobilitydatabase",
                 id_prefix="md",
                 feed_id=feed_id,
+                feed_references=tuple(feed.get("feed_references") or ()),
                 vehicles=url if "vehicles" in roles else "",
                 trip_updates=url if "trip_updates" in roles else "",
                 alerts=url if "alerts" in roles else "",

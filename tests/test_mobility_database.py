@@ -153,6 +153,17 @@ def test_realtime_entity_types_become_url_roles():
     }
 
 
+def test_realtime_feed_references_are_carried_to_link_the_schedule():
+    feed = gtfs_feed(
+        "mdb-rt",
+        data_type="gtfs_rt",
+        entity_types=["vp"],
+        feed_references=["mdb-10", "mdb-11"],
+        source_info={"producer_url": "https://example.org/rt.pb"},
+    )
+    assert build_realtime_sources([feed])[0].feed_references == ("mdb-10", "mdb-11")
+
+
 def test_a_realtime_feed_declaring_no_entity_types_is_still_checked():
     feed = gtfs_feed(
         "mdb-bare",

@@ -34,14 +34,47 @@ order:
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
 | `curated_examples` | The hand-curated set, as declarative source data in `data/examples.yaml` |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
-| `endpoint_checks` | HEAD (ranged GET on fallback) every download URL |
-| `check_history` | Fold the checks into one answer per source; record state changes in Postgres |
-| `history_retention` | Delete `source_state` and absent `source` rows past their window |
+| `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
+| `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
+| `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
+| `history_retention` | Delete old `endpoint_state` rows, and absent sources, endpoints and feeds, past their window |
 | `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
-Storage is shaped so it does not grow with feeds x days: `source_state` holds
-one row per **state change**, not per check, so a feed up for a year is one row.
+Storage is shaped so it does not grow with feeds x days: `endpoint_state` holds
+one row per **state change**, not per check, so a URL up for a year is one row.
+
+History is keyed by **normalized URL** (`endpoint`), because the URL is what is
+checked. Catalog rows (`source`, linked by `source_endpoint`) and logical feeds
+(`feed`, `feed_member`) have no stored state: both derive it from their URLs. A
+row is up when all its URLs answer. A feed has a per-role state (up when any
+URL for that role answers, so a consumer can load it) and an overall state (up
+only when every checkable URL answers); each consumer applies its own rule.
+
+### Logical feeds
+
+Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
+joins rows on exactly four kinds of evidence:
+
+- a shared normalized URL, any kind, any catalog;
+- an MDB realtime row's `feed_references` to an MDB static row;
+- realtime URLs on the same host and path differing only in a final
+  `vehicles`/`vehiclepositions`/`trips`/`tripupdates`/`alerts`/`servicealerts`
+  segment (case, `_`/`-` and extension ignored; the query must match);
+- the static and rt rows one catalog feed was split into.
+
+No fuzzy name matching and no override file yet, so the rules **can
+false-merge** (a regional schedule that several agencies' realtime feeds all
+reference makes them one feed; PTV's nested-zip feeds sharing one download are
+one feed) and a wrong link can only be undone by changing the rules. Names:
+curated > Mobility Database > Transitland. Coordinates: any placed member.
+
+Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
+each group takes the id of the existing feed it shares the most members with
+(greedy, largest overlap first; on a split the larger part keeps the id), and
+a new id is minted only for a group sharing none. A feed whose group vanishes
+is kept absent, with its members, for the absent-retention window, so it gets
+its id back if the group returns.
 
 Coordinates come from the Mobility Database only. DMFR carries no place data, so
 Transitland-only rows are unplaced unless a cross-link supplies coordinates. The
@@ -61,8 +94,8 @@ unplaced count is published and shown, not hidden.
 | `CHECK_PER_HOST_DELAY_SECONDS` | Pause between requests to one host (default 1.0) |
 | `CHECK_TIMEOUT_SECONDS` | Per-request timeout (default 30) |
 | `CHECK_USER_AGENT` | Sent on every check; names the project and a contact URL |
-| `STATE_RETENTION_DAYS` | Age at which `source_state` rows are deleted (default 400) |
-| `SOURCE_ABSENT_RETENTION_DAYS` | Days absent from every catalog before a `source` row is deleted (default 90) |
+| `STATE_RETENTION_DAYS` | Age at which `endpoint_state` rows are deleted (default 400) |
+| `SOURCE_ABSENT_RETENTION_DAYS` | Days absent before a `source`, `endpoint` or `feed` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
@@ -95,9 +128,13 @@ unplaced count is published and shown, not hidden.
 - `geometry_car/assets/__init__.py` stays empty of imports on purpose:
   re-exporting the asset objects shadows the submodule names, and then anything
   addressing a module by its dotted path gets the asset instead.
-- Both catalogs list many of the same feeds. They are cross-linked by normalized
-  URL (`same_endpoint_as`), never merged - merging means picking whose id and
-  name win and silently losing the loser.
+- Both catalogs list many of the same feeds. Catalog rows are cross-linked by
+  normalized URL (`same_endpoint_as`), never merged - merging means picking
+  whose id and name win and silently losing the loser. Logical feeds sit on
+  top and reference rows by id; they never replace or rewrite them.
+- Migrations touching tables with history must be tried against a copy of the
+  live tables (`pg_dump -t` into a local Postgres), not only SQLite: the tests
+  stamp past `7c2e5a1d9b30` because SQLite cannot `ALTER COLUMN ... TYPE`.
 
 ## Related Repos
 
