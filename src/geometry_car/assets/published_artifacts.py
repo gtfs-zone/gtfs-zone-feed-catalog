@@ -20,6 +20,7 @@ from geometry_car import artifacts
 from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.curated_examples import CuratedExample
 from geometry_car.catalog import Source
+from geometry_car.heartbeat import push_heartbeat
 from geometry_car.settings import settings
 
 log = logging.getLogger(__name__)
@@ -130,4 +131,7 @@ def published_artifacts(
 ) -> None:
     store = get_object_store()
     metadata = publish(store, sources, check_history, curated_examples, context.run_id)
-    context.add_output_metadata({"bucket": store.bucket, **metadata})
+    heartbeat = push_heartbeat(settings)
+    context.add_output_metadata(
+        {"bucket": store.bucket, "heartbeat": heartbeat, **metadata}
+    )

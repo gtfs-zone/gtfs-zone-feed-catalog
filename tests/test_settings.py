@@ -12,3 +12,4 @@ def test_secrets_have_no_baked_defaults():
     s = Settings(_env_file=None)
     assert s.mobility_db_refresh_token == ""
     assert s.database_url == ""
+    assert s.gatus_token == ""

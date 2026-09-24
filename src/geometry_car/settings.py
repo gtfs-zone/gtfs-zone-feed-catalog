@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     snapshot_daily_days: int = 30
     snapshot_weekly_days: int = 365
 
+    # Gatus external endpoint pushed after a successful publish. Gatus pages when
+    # no push arrives within its heartbeat interval, which covers a failed run, a
+    # dead daemon and a schedule that never fired alike. Empty URL disables it.
+    gatus_url: str = ""
+    gatus_endpoint_key: str = "data_catalog-publish"
+    gatus_token: str = ""
+
     # The object store the published artifacts are written to is configured by
     # railroad_club.object_store.ObjectStoreSettings, off the same .env:
     # S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION. Not

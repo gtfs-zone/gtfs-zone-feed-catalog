@@ -65,6 +65,9 @@ unplaced count is published and shown, not hidden.
 | `SOURCE_ABSENT_RETENTION_DAYS` | Days absent from every catalog before a `source` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
+| `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
+| `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
+| `GATUS_TOKEN` | Bearer token for that external endpoint |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `railroad_club.object_store`, not by this repo's `Settings` |
 
 ## Rules
