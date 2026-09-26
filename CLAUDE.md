@@ -51,6 +51,8 @@ The published documents, all shaped in `artifacts.py`:
 | `examples.json` | The curated set, ready to load, each with the `feedId` its rows landed in |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
 | `manifest.json` | sha256 and size of every other artifact; written last |
+| `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
+| `sitemap.xml` | Every indexable feed page, `lastmod` the day its fragments last changed |
 
 Storage is shaped so it does not grow with feeds x days: `endpoint_state` holds
 one row per **state change**, not per check, so a URL up for a year is one row.

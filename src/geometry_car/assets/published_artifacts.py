@@ -7,6 +7,10 @@ answered.
 
 ``manifest.json`` is written last, on purpose: it is what a consumer polls, so
 it must never advertise a hash for a file that is not up yet.
+
+Per-feed page fragments and ``sitemap.xml`` go alongside, for list.gtfs.zone's
+feed pages. A fragment is rewritten only when its content hash changes, so a
+quiet day costs one index read rather than thousands of puts.
 """
 
 import json
@@ -16,7 +20,7 @@ from datetime import datetime
 from dagster import AssetExecutionContext, asset
 from railroad_club.object_store import ObjectNotFound, ObjectStore, get_object_store
 
-from geometry_car import artifacts
+from geometry_car import artifacts, pages
 from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.curated_examples import CuratedExample
 from geometry_car.assets.feeds import Feed
@@ -33,6 +37,86 @@ def _read_index(store: ObjectStore) -> list[dict]:
         return json.loads(store.get(artifacts.SNAPSHOT_INDEX_KEY)).get("snapshots", [])
     except ObjectNotFound:
         return []
+
+
+def _read_pages_index(store: ObjectStore) -> dict[str, dict]:
+    """Each feed's page hash and lastmod, or none on a bucket without pages."""
+    try:
+        return json.loads(store.get(pages.PAGES_INDEX_KEY)).get("pages", {})
+    except ObjectNotFound:
+        return {}
+
+
+def publish_pages(
+    store: ObjectStore,
+    sources: list[Source],
+    feeds: list[Feed],
+    statuses: dict[str, SourceStatus],
+    generated_at: datetime,
+) -> dict[str, int]:
+    """Write changed feed fragments, drop vanished ones, rewrite the sitemap."""
+    rows = {source.source_id: source for source in sources}
+    previous = _read_pages_index(store)
+    index: dict[str, dict] = {}
+    written = 0
+
+    for feed in feeds:
+        members = [rows[m] for m in feed.members if m in rows]
+        head, body = pages.render(feed, members, statuses, generated_at)
+        digest = artifacts.sha256(f"{head}\0{body}".encode())
+        since = artifacts.feed_since(feed, statuses)
+        entry = {
+            "sha256": digest,
+            "url": pages.feed_url(feed),
+            "indexed": pages.indexable(feed, since, generated_at),
+            "lastmod": generated_at.date().isoformat(),
+        }
+        old = previous.get(feed.feed_id)
+        if old and old.get("sha256") == digest:
+            entry["lastmod"] = old.get("lastmod", entry["lastmod"])
+        else:
+            prefix = f"{pages.PAGES_PREFIX}{feed.feed_id}/"
+            store.put(
+                f"{prefix}head.html",
+                head.encode(),
+                content_type=pages.PAGE_CONTENT_TYPE,
+            )
+            store.put(
+                f"{prefix}body.html",
+                body.encode(),
+                content_type=pages.PAGE_CONTENT_TYPE,
+            )
+            written += 1
+        index[feed.feed_id] = entry
+
+    removed = [feed_id for feed_id in previous if feed_id not in index]
+    for feed_id in removed:
+        store.delete_prefix(f"{pages.PAGES_PREFIX}{feed_id}/")
+
+    store.put(
+        pages.PAGES_INDEX_KEY,
+        artifacts.dumps({"pages": index}),
+        content_type=artifacts.ARTIFACT_CONTENT_TYPE,
+    )
+    indexed = sorted(
+        (entry["url"], entry["lastmod"]) for entry in index.values() if entry["indexed"]
+    )
+    store.put(
+        pages.SITEMAP_KEY,
+        pages.sitemap(indexed),
+        content_type=pages.SITEMAP_CONTENT_TYPE,
+    )
+    log.info(
+        "pages: %d written, %d removed, %d in the sitemap",
+        written,
+        len(removed),
+        len(indexed),
+    )
+    return {
+        "pages_written": written,
+        "pages_removed": len(removed),
+        "pages_indexed": len(indexed),
+    }
 
 
 def publish(
@@ -62,6 +146,8 @@ def publish(
     for key, body in documents.items():
         store.put(key, body, content_type=artifacts.ARTIFACT_CONTENT_TYPE)
     log.info("wrote %d artifacts to %s", len(documents), store.bucket)
+
+    page_counts = publish_pages(store, sources, feeds, statuses, generated_at)
 
     # A snapshot is written only when the day's answers differ from the last
     # snapshot's, so a quiet week costs one file rather than seven.
@@ -123,11 +209,15 @@ def publish(
         "snapshots_pruned": len(dropped),
         "snapshot_written": int(wrote_snapshot),
         "bytes": sum(len(body) for body in documents.values()),
+        **page_counts,
     }
 
 
 @asset(
-    description="sources, feeds, status, examples, summary, snapshot and manifest",
+    description=(
+        "sources, feeds, status, examples, summary, snapshot, manifest, "
+        "feed pages and sitemap"
+    ),
     # Ordering only: the CORS rule is in place before anything is published.
     deps=["bucket_cors"],
 )
