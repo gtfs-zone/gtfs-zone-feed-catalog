@@ -25,10 +25,12 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from geometry_car.catalog import ATLAS_URL_KEYS, Place, Source
+from geometry_car.urls import normalize_url
 
 if TYPE_CHECKING:
     from geometry_car.assets.check_history import SourceStatus
     from geometry_car.assets.curated_examples import CuratedExample
+    from geometry_car.assets.feed_contents import FeedContent
     from geometry_car.assets.feeds import Feed
 
 ARTIFACT_CONTENT_TYPE = "application/json"
@@ -122,7 +124,45 @@ def feed_since(feed: Feed, statuses: dict[str, SourceStatus]) -> datetime | None
     return max(sinces) if feed.state == "up" else min(sinces)
 
 
-def feed_entry(feed: Feed, statuses: dict[str, SourceStatus]) -> dict[str, Any]:
+def feed_content(
+    feed: Feed, contents: dict[str, FeedContent] | None
+) -> FeedContent | None:
+    """The content report for the feed's best reported schedule URL."""
+    for url in feed.urls.get("scheduled", ()):
+        if content := (contents or {}).get(normalize_url(url) or url):
+            return content
+    return None
+
+
+def content_fields(content: FeedContent) -> dict[str, Any]:
+    """A feed's `content` in feeds.json: the download outcome and, when ok, a
+    compact subset of the zip's facts. Agencies stay on the feed page."""
+    facts = content.facts
+    service = facts.get("service") or {}
+    info = facts.get("feedInfo") or {}
+    counts = facts.get("counts") or {}
+    fields = {
+        "state": content.outcome,
+        "since": content.since.isoformat(),
+        "checked": content.checked.isoformat(),
+        "detail": content.detail,
+        "serviceStart": service.get("start"),
+        "serviceEnd": service.get("end"),
+        "publisher": info.get("publisher"),
+        "version": info.get("version"),
+        "routes": counts.get("routes"),
+        "stops": counts.get("stops"),
+        "trips": counts.get("trips"),
+        "routeTypes": facts.get("routeTypes"),
+    }
+    return {key: value for key, value in fields.items() if value not in (None, "")}
+
+
+def feed_entry(
+    feed: Feed,
+    statuses: dict[str, SourceStatus],
+    contents: dict[str, FeedContent] | None = None,
+) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "feedId": feed.feed_id,
         "name": feed.name,
@@ -141,17 +181,22 @@ def feed_entry(feed: Feed, statuses: dict[str, SourceStatus]) -> dict[str, Any]:
         entry["lastModified"] = feed.last_modified.isoformat()
     if (since := feed_since(feed, statuses)) is not None:
         entry["since"] = since.isoformat()
+    if (content := feed_content(feed, contents)) is not None:
+        entry["content"] = content_fields(content)
     return entry | place_fields(feed.place)
 
 
 def feeds_document(
-    feeds: list[Feed], statuses: dict[str, SourceStatus], generated_at: datetime
+    feeds: list[Feed],
+    statuses: dict[str, SourceStatus],
+    generated_at: datetime,
+    contents: dict[str, FeedContent] | None = None,
 ) -> bytes:
     return dumps(
         {
             "generated_at": generated_at.isoformat(),
             "count": len(feeds),
-            "feeds": [feed_entry(feed, statuses) for feed in feeds],
+            "feeds": [feed_entry(feed, statuses, contents) for feed in feeds],
         }
     )
 
@@ -258,6 +303,7 @@ def summary_document(
     statuses: dict[str, SourceStatus],
     feeds: list[Feed],
     generated_at: datetime,
+    contents: dict[str, FeedContent] | None = None,
 ) -> bytes:
     by_catalog = Counter(s.catalog for s in sources)
     by_kind = Counter(s.kind for s in sources)
@@ -267,6 +313,11 @@ def summary_document(
     by_country = Counter(s.place.country_code for s in sources if s.place.country_code)
     placed = sum(1 for s in sources if s.place.placed)
     feeds_placed = sum(1 for feed in feeds if feed.place.placed)
+    by_content = Counter(
+        content.outcome
+        for feed in feeds
+        if (content := feed_content(feed, contents)) is not None
+    )
 
     return dumps(
         {
@@ -286,6 +337,8 @@ def summary_document(
                 "realtime": sum(1 for feed in feeds if set(feed.urls) - {"scheduled"}),
                 "placed": feeds_placed,
                 "unplaced": len(feeds) - feeds_placed,
+                # Only feeds cape-flier builds a site from have a content state.
+                "by_content": dict(by_content),
             },
         }
     )

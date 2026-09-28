@@ -285,6 +285,7 @@ def test_the_summary_counts_feeds_as_well_as_rows():
         "realtime": 1,
         "placed": 2,
         "unplaced": 0,
+        "by_content": {},
     }
 
 

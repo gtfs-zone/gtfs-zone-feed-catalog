@@ -23,6 +23,7 @@ from railroad_club.object_store import ObjectNotFound, ObjectStore, get_object_s
 from geometry_car import artifacts, pages
 from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.curated_examples import CuratedExample
+from geometry_car.assets.feed_contents import FeedContent
 from geometry_car.assets.feeds import Feed
 from geometry_car.catalog import Source
 from geometry_car.heartbeat import push_heartbeat
@@ -53,6 +54,7 @@ def publish_pages(
     feeds: list[Feed],
     statuses: dict[str, SourceStatus],
     generated_at: datetime,
+    contents: dict[str, FeedContent] | None = None,
 ) -> dict[str, int]:
     """Write changed feed fragments, drop vanished ones, rewrite the sitemap."""
     rows = {source.source_id: source for source in sources}
@@ -62,7 +64,7 @@ def publish_pages(
 
     for feed in feeds:
         members = [rows[m] for m in feed.members if m in rows]
-        head, body = pages.render(feed, members, statuses, generated_at)
+        head, body = pages.render(feed, members, statuses, generated_at, contents)
         digest = artifacts.sha256(f"{head}\0{body}".encode())
         since = artifacts.feed_since(feed, statuses)
         entry = {
@@ -127,6 +129,7 @@ def publish(
     examples: list[CuratedExample],
     run_id: str,
     generated_at: datetime | None = None,
+    contents: dict[str, FeedContent] | None = None,
 ) -> dict[str, int]:
     """Write every artifact, and return what a caller wants to report."""
     generated_at = generated_at or artifacts.utcnow()
@@ -134,20 +137,20 @@ def publish(
 
     documents = {
         "sources.json": artifacts.sources_document(sources, statuses, generated_at),
-        "feeds.json": artifacts.feeds_document(feeds, statuses, generated_at),
+        "feeds.json": artifacts.feeds_document(feeds, statuses, generated_at, contents),
         "status.json": artifacts.status_document(statuses, generated_at),
         "examples.json": artifacts.example_document(
             examples, statuses, feeds, generated_at
         ),
         "summary.json": artifacts.summary_document(
-            sources, statuses, feeds, generated_at
+            sources, statuses, feeds, generated_at, contents
         ),
     }
     for key, body in documents.items():
         store.put(key, body, content_type=artifacts.ARTIFACT_CONTENT_TYPE)
     log.info("wrote %d artifacts to %s", len(documents), store.bucket)
 
-    page_counts = publish_pages(store, sources, feeds, statuses, generated_at)
+    page_counts = publish_pages(store, sources, feeds, statuses, generated_at, contents)
 
     # A snapshot is written only when the day's answers differ from the last
     # snapshot's, so a quiet week costs one file rather than seven.
@@ -227,10 +230,17 @@ def published_artifacts(
     feeds: list[Feed],
     check_history: dict[str, SourceStatus],
     curated_examples: list[CuratedExample],
+    feed_contents: dict[str, FeedContent],
 ) -> None:
     store = get_object_store()
     metadata = publish(
-        store, sources, feeds, check_history, curated_examples, context.run_id
+        store,
+        sources,
+        feeds,
+        check_history,
+        curated_examples,
+        context.run_id,
+        contents=feed_contents,
     )
     heartbeat = push_heartbeat(settings)
     context.add_output_metadata(

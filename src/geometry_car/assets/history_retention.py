@@ -26,6 +26,7 @@ from geometry_car.assets.check_history import SourceStatus
 from geometry_car.assets.feeds import Feed
 from geometry_car.database import get_session_factory
 from geometry_car.history.models import (
+    EndpointContentState,
     EndpointRecord,
     EndpointState,
     FeedRecord,
@@ -46,6 +47,11 @@ def prune(now: datetime | None = None) -> dict[str, int]:
         return {
             "endpoint_state": session.execute(
                 delete(EndpointState).where(EndpointState.changed_at < state_cutoff)
+            ).rowcount,
+            "endpoint_content_state": session.execute(
+                delete(EndpointContentState).where(
+                    EndpointContentState.changed_at < state_cutoff
+                )
             ).rowcount,
             # Only rows no catalog still lists: a present source keeps its row
             # however old it is.

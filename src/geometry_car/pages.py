@@ -19,11 +19,12 @@ from html import escape
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
-from geometry_car.artifacts import feed_since
+from geometry_car.artifacts import feed_content, feed_since
 from geometry_car.catalog import RT_ROLES, STATIC_ROLES
 
 if TYPE_CHECKING:
     from geometry_car.assets.check_history import SourceStatus
+    from geometry_car.assets.feed_contents import FeedContent
     from geometry_car.assets.feeds import Feed
     from geometry_car.catalog import Source
 
@@ -55,6 +56,23 @@ ROLE_FORMATS = {
     "alerts": "application/x-protobuf",
 }
 STATE_LABELS = {"up": "Up", "down": "Down", "unknown": "Inaccessible"}
+OUTCOME_LABELS = {
+    "ok": "a valid GTFS zip",
+    "not_zip": "not a zip file",
+    "missing_files": "a zip missing required GTFS files",
+    "parse_error": "a zip that could not be read",
+    "http_error": "a failed download",
+    "timeout": "a download that timed out",
+    "memory": "too large to process",
+    "error": "a download that could not be processed",
+}
+# What a body that is not a zip looked like.
+SNIFF_LABELS = {
+    "html": "an HTML page",
+    "json": "JSON",
+    "xml": "XML",
+    "empty": "an empty response",
+}
 CATALOG_LABELS = {
     "transitland": "Transitland",
     "mobilitydatabase": "Mobility Database",
@@ -164,7 +182,9 @@ def indexable(feed: Feed, since: datetime | None, now: datetime) -> bool:
     return not (feed.state == "down" and since and now - since > NOINDEX_DOWN_AFTER)
 
 
-def dataset(feed: Feed, rows: list[Source]) -> dict[str, Any]:
+def dataset(
+    feed: Feed, rows: list[Source], content: FeedContent | None = None
+) -> dict[str, Any]:
     """schema.org Dataset, for Google Dataset Search."""
     url = feed_url(feed)
     doc: dict[str, Any] = {
@@ -217,6 +237,9 @@ def dataset(feed: Feed, rows: list[Source]) -> dict[str, Any]:
         }
     if len(coverage) > 1:
         doc["spatialCoverage"] = coverage
+    service = (content.facts.get("service") or {}) if content else {}
+    if service.get("start") and service.get("end"):
+        doc["temporalCoverage"] = f"{service['start']}/{service['end']}"
     return doc
 
 
@@ -227,7 +250,11 @@ def _json_ld(doc: dict[str, Any]) -> str:
 
 
 def head_fragment(
-    feed: Feed, rows: list[Source], since: datetime | None, now: datetime
+    feed: Feed,
+    rows: list[Source],
+    since: datetime | None,
+    now: datetime,
+    content: FeedContent | None = None,
 ) -> str:
     url = escape(feed_url(feed))
     page_title = escape(title(feed))
@@ -247,7 +274,8 @@ def head_fragment(
     if not indexable(feed, since, now):
         lines.append('<meta name="robots" content="noindex" />')
     lines.append(
-        f'<script type="application/ld+json">{_json_ld(dataset(feed, rows))}</script>'
+        '<script type="application/ld+json">'
+        f"{_json_ld(dataset(feed, rows, content))}</script>"
     )
     return "\n".join(lines) + "\n"
 
@@ -256,7 +284,43 @@ def _link(href: str, text: str) -> str:
     return f'<a href="{escape(href)}" rel="noopener">{escape(text)}</a>'
 
 
-def body_fragment(feed: Feed, rows: list[Source], since: datetime | None) -> str:
+def content_facts(content: FeedContent) -> list[str]:
+    """The schedule's last download and what it held, as list items."""
+    outcome = OUTCOME_LABELS.get(content.outcome, content.outcome)
+    if content.outcome == "not_zip" and content.detail in SNIFF_LABELS:
+        outcome = f"{outcome} ({SNIFF_LABELS[content.detail]})"
+    elif content.outcome not in ("ok", "not_zip") and content.detail:
+        outcome = f"{outcome} ({content.detail})"
+    facts = [
+        f"Last download: {outcome} since {content.since.isoformat()}, "
+        f"checked {content.checked.isoformat()}"
+    ]
+    service = content.facts.get("service") or {}
+    if service.get("start") and service.get("end"):
+        facts.append(f"Service: {service['start']} to {service['end']}")
+    info = content.facts.get("feedInfo") or {}
+    if info.get("publisher"):
+        facts.append(f"Publisher: {info['publisher']}")
+    if info.get("version"):
+        facts.append(f"Version: {info['version']}")
+    agencies = [a["name"] for a in content.facts.get("agencies") or [] if a.get("name")]
+    if agencies:
+        facts.append(f"Agencies: {', '.join(agencies)}")
+    counts = content.facts.get("counts") or {}
+    if counts:
+        facts.append(
+            f"{counts.get('routes', 0):,} routes, {counts.get('stops', 0):,} stops, "
+            f"{counts.get('trips', 0):,} trips"
+        )
+    return facts
+
+
+def body_fragment(
+    feed: Feed,
+    rows: list[Source],
+    since: datetime | None,
+    content: FeedContent | None = None,
+) -> str:
     state = STATE_LABELS.get(feed.state, feed.state)
     status = f"{state} since {since.date().isoformat()}" if since else state
     out = [f"<h1>{escape(feed.name)}</h1>"]
@@ -283,6 +347,8 @@ def body_fragment(feed: Feed, rows: list[Source], since: datetime | None) -> str
         facts.append(f"Schedule size: {feed.static_bytes:,} bytes")
     if feed.last_modified:
         facts.append(f"Schedule last modified: {feed.last_modified.date().isoformat()}")
+    if content is not None:
+        facts += content_facts(content)
     if facts:
         out.append("<ul>" + "".join(f"<li>{escape(f)}</li>" for f in facts) + "</ul>")
 
@@ -315,10 +381,15 @@ def render(
     rows: list[Source],
     statuses: dict[str, SourceStatus],
     now: datetime,
+    contents: dict[str, FeedContent] | None = None,
 ) -> tuple[str, str]:
     """The (head, body) fragments for one feed."""
     since = feed_since(feed, statuses)
-    return head_fragment(feed, rows, since, now), body_fragment(feed, rows, since)
+    content = feed_content(feed, contents)
+    return (
+        head_fragment(feed, rows, since, now, content),
+        body_fragment(feed, rows, since, content),
+    )
 
 
 def sitemap(entries: list[tuple[str, str]]) -> bytes:

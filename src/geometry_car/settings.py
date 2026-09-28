@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     snapshot_daily_days: int = 30
     snapshot_weekly_days: int = 365
 
+    # Where cape-flier publishes its content report (`_content/index.json` and
+    # one file per shard): what each schedule's download held. Empty skips it.
+    content_report_base: str = "https://sites.gtfs.zone/"
+
     # Gatus external endpoint pushed after a successful publish. Gatus pages when
     # no push arrives within its heartbeat interval, which covers a failed run, a
     # dead daemon and a schedule that never fired alike. Empty URL disables it.

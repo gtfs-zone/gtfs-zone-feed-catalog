@@ -17,11 +17,14 @@ itself; the names here do not collide with any of Dagster's.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -166,6 +169,47 @@ class EndpointState(Base):
     )
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+
+class EndpointContent(Base):
+    """What a URL's download last held, as cape-flier's content report says.
+
+    Only URLs cape-flier builds a site from have one. ``facts`` is the report's
+    feed_info, service range, agencies and counts, set when the outcome is ok.
+    """
+
+    __tablename__ = "endpoint_content"
+
+    url: Mapped[str] = mapped_column(
+        Text, ForeignKey("endpoint.url", ondelete="CASCADE"), primary_key=True
+    )
+    checked: Mapped[date] = mapped_column(Date, nullable=False)
+    # ok, not_zip, missing_files, parse_error, http_error, timeout, memory, error.
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    since: Mapped[date] = mapped_column(Date, nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    facts: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class EndpointContentState(Base):
+    """One row per change of a URL's content outcome, never one per report."""
+
+    __tablename__ = "endpoint_content_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("endpoint.url", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
 
 
 class FeedRecord(Base):

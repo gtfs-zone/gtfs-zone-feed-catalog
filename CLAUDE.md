@@ -36,8 +36,9 @@ order:
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
+| `feed_contents` | Read cape-flier's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
-| `history_retention` | Delete old `endpoint_state` rows, and absent sources, endpoints and feeds, past their window |
+| `history_retention` | Delete old `endpoint_state` and `endpoint_content_state` rows, and absent sources, endpoints and feeds, past their window |
 | `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
@@ -45,7 +46,7 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, place. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds cape-flier builds), place. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since); also what a snapshot hashes |
 | `examples.json` | The curated set, ready to load, each with the `feedId` its rows landed in |
@@ -107,10 +108,11 @@ unplaced count is published and shown, not hidden.
 | `CHECK_PER_HOST_DELAY_SECONDS` | Pause between requests to one host (default 1.0) |
 | `CHECK_TIMEOUT_SECONDS` | Per-request timeout (default 30) |
 | `CHECK_USER_AGENT` | Sent on every check; names the project and a contact URL |
-| `STATE_RETENTION_DAYS` | Age at which `endpoint_state` rows are deleted (default 400) |
+| `STATE_RETENTION_DAYS` | Age at which `endpoint_state` and `endpoint_content_state` rows are deleted (default 400) |
 | `SOURCE_ABSENT_RETENTION_DAYS` | Days absent before a `source`, `endpoint` or `feed` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
+| `CONTENT_REPORT_BASE` | Where cape-flier's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |

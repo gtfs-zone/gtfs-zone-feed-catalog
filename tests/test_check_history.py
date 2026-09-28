@@ -255,7 +255,13 @@ def test_retention_deletes_old_rows_and_absent_things_only(session_factory):
         )
 
     # The dropped endpoint's recent row goes with it, by cascade, not by age.
-    assert prune() == {"endpoint_state": 1, "source": 1, "endpoint": 1, "feed": 1}
+    assert prune() == {
+        "endpoint_state": 1,
+        "endpoint_content_state": 0,
+        "source": 1,
+        "endpoint": 1,
+        "feed": 1,
+    }
 
     with session_factory() as session:
         assert {r.source_id for r in session.scalars(select(SourceRecord)).all()} == {

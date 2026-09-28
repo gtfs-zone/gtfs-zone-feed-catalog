@@ -99,6 +99,8 @@ def test_source_state_moves_onto_endpoints(alembic):
         "source_endpoint",
         "feed",
         "feed_member",
+        "endpoint_content",
+        "endpoint_content_state",
     } <= set(tables)
     columns = {c["name"] for c in inspect(engine).get_columns("source")}
     assert not {"state", "last_checked", "consecutive_failures"} & columns

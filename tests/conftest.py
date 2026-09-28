@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from geometry_car.assets import check_history as check_history_module
+from geometry_car.assets import feed_contents as feed_contents_module
 from geometry_car.assets import feeds as feeds_module
 from geometry_car.assets import history_retention as retention_module
 from geometry_car.history.models import Base
@@ -49,7 +50,12 @@ def session_factory(monkeypatch):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
-    for module in (check_history_module, feeds_module, retention_module):
+    for module in (
+        check_history_module,
+        feed_contents_module,
+        feeds_module,
+        retention_module,
+    ):
         monkeypatch.setattr(module, "get_session_factory", lambda: factory)
     monkeypatch.setattr(settings, "database_url", "sqlite://")
     return factory
