@@ -137,7 +137,9 @@ def publish(
 
     documents = {
         "sources.json": artifacts.sources_document(sources, statuses, generated_at),
-        "feeds.json": artifacts.feeds_document(feeds, statuses, generated_at, contents),
+        "feeds.json": artifacts.feeds_document(
+            feeds, statuses, generated_at, contents, sources
+        ),
         "status.json": artifacts.status_document(statuses, generated_at),
         "examples.json": artifacts.example_document(
             examples, statuses, feeds, generated_at

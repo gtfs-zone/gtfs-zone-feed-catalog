@@ -19,7 +19,7 @@ from html import escape
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
-from geometry_car.artifacts import feed_content, feed_since
+from geometry_car.artifacts import catalog_url, feed_content, feed_since
 from geometry_car.catalog import RT_ROLES, STATIC_ROLES
 
 if TYPE_CHECKING:
@@ -31,8 +31,6 @@ if TYPE_CHECKING:
 SITE_BASE = "https://list.gtfs.zone"
 EDITOR_BASE = "https://edit.gtfs.zone"
 VIEWER_BASE = "https://viz.rt.gtfs.zone"
-TRANSITLAND_FEED_BASE = "https://www.transit.land/feeds/"
-MOBILITYDATABASE_FEED_BASE = "https://mobilitydatabase.org/feeds/"
 
 PAGES_PREFIX = "pages/feed/"
 PAGES_INDEX_KEY = "pages/index.json"
@@ -163,16 +161,6 @@ def viewer_url(feed: Feed) -> str | None:
         if urls := feed.urls.get(role):
             params[key] = urls[0]
     return f"{VIEWER_BASE}/#{urlencode(params)}"
-
-
-def catalog_url(row: Source) -> str | None:
-    """Mirrors globe-of-contents' labels.ts catalogUrl."""
-    if row.catalog == "transitland":
-        return f"{TRANSITLAND_FEED_BASE}{row.feed_id}"
-    if row.catalog == "mobilitydatabase":
-        kind = "gtfs_rt" if row.kind == "rt" else "gtfs"
-        return f"{MOBILITYDATABASE_FEED_BASE}{kind}/{row.feed_id}"
-    return None
 
 
 def indexable(feed: Feed, since: datetime | None, now: datetime) -> bool:

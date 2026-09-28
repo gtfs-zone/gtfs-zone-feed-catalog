@@ -37,6 +37,31 @@ ARTIFACT_CONTENT_TYPE = "application/json"
 SNAPSHOT_CONTENT_TYPE = "application/gzip"
 SNAPSHOT_PREFIX = "snapshots/"
 SNAPSHOT_INDEX_KEY = "snapshots/index.json"
+TRANSITLAND_FEED_BASE = "https://www.transit.land/feeds/"
+MOBILITYDATABASE_FEED_BASE = "https://mobilitydatabase.org/feeds/"
+
+# Carried at the top of sources.json, feeds.json and manifest.json. The Atlas
+# is CC-BY 4.0 and asks for a link; the Mobility Database catalog is CC0.
+ATTRIBUTION: dict[str, Any] = {
+    "catalogs": [
+        {
+            "name": "Transitland Atlas",
+            "url": "https://github.com/transitland/transitland-atlas",
+            "license": "CC-BY-4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        },
+        {
+            "name": "Mobility Database",
+            "url": "https://mobilitydatabase.org",
+            "license": "CC0-1.0",
+            "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        },
+    ],
+    "feeds": (
+        "Each feed's data belongs to its publisher and is licensed on the"
+        " publisher's terms: see a row's license_url and a feed's licenses."
+    ),
+}
 
 
 def dumps(payload: object) -> bytes:
@@ -67,6 +92,16 @@ def place_fields(place: Place) -> dict[str, Any]:
     if place.bbox:
         fields["bbox"] = [round(v, 5) for v in place.bbox]
     return fields
+
+
+def catalog_url(row: Source) -> str | None:
+    """Mirrors globe-of-contents' labels.ts catalogUrl."""
+    if row.catalog == "transitland":
+        return f"{TRANSITLAND_FEED_BASE}{row.feed_id}"
+    if row.catalog == "mobilitydatabase":
+        kind = "gtfs_rt" if row.kind == "rt" else "gtfs"
+        return f"{MOBILITYDATABASE_FEED_BASE}{kind}/{row.feed_id}"
+    return None
 
 
 def source_row(source: Source, status: SourceStatus | None) -> dict[str, Any]:
@@ -105,6 +140,7 @@ def sources_document(
     return dumps(
         {
             "generated_at": generated_at.isoformat(),
+            "attribution": ATTRIBUTION,
             "count": len(sources),
             "sources": [source_row(s, statuses.get(s.source_id)) for s in sources],
         }
@@ -162,6 +198,7 @@ def feed_entry(
     feed: Feed,
     statuses: dict[str, SourceStatus],
     contents: dict[str, FeedContent] | None = None,
+    rows: dict[str, Source] | None = None,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "feedId": feed.feed_id,
@@ -183,6 +220,11 @@ def feed_entry(
         entry["since"] = since.isoformat()
     if (content := feed_content(feed, contents)) is not None:
         entry["content"] = content_fields(content)
+    members = [rows[m] for m in feed.members if m in (rows or {})]
+    if licenses := sorted({row.license_url for row in members if row.license_url}):
+        entry["licenses"] = licenses
+    if links := sorted({url for row in members if (url := catalog_url(row))}):
+        entry["catalogLinks"] = links
     return entry | place_fields(feed.place)
 
 
@@ -191,12 +233,15 @@ def feeds_document(
     statuses: dict[str, SourceStatus],
     generated_at: datetime,
     contents: dict[str, FeedContent] | None = None,
+    sources: list[Source] | None = None,
 ) -> bytes:
+    rows = {source.source_id: source for source in sources or []}
     return dumps(
         {
             "generated_at": generated_at.isoformat(),
+            "attribution": ATTRIBUTION,
             "count": len(feeds),
-            "feeds": [feed_entry(feed, statuses, contents) for feed in feeds],
+            "feeds": [feed_entry(feed, statuses, contents, rows) for feed in feeds],
         }
     )
 
@@ -404,6 +449,7 @@ def manifest_document(
         {
             "generated_at": generated_at.isoformat(),
             "run_id": run_id,
+            "attribution": ATTRIBUTION,
             "artifacts": {
                 name: {"sha256": sha256(body), "bytes": len(body)}
                 for name, body in sorted(artifacts.items())

@@ -148,6 +148,20 @@ def test_the_manifest_hashes_every_artifact():
     assert manifest["run_id"] == "run-1"
     assert manifest["artifacts"]["sources.json"]["bytes"] == 2
     assert manifest["artifacts"]["sources.json"]["sha256"] == artifacts.sha256(b"{}")
+    assert manifest["attribution"] == artifacts.ATTRIBUTION
+
+
+def test_sources_and_feeds_credit_both_catalogs_and_their_licenses():
+    sources = json.loads(artifacts.sources_document([ROW], {}, NOW))
+    feeds = json.loads(artifacts.feeds_document([], {}, NOW))
+    for document in (sources, feeds):
+        catalogs = {
+            c["name"]: c["license"] for c in document["attribution"]["catalogs"]
+        }
+        assert catalogs == {
+            "Transitland Atlas": "CC-BY-4.0",
+            "Mobility Database": "CC0-1.0",
+        }
 
 
 STATIC = Source(
@@ -167,6 +181,7 @@ REALTIME = Source(
     name="Metro RT",
     urls={"vehicles": "https://a.org/rt/vehicles"},
     feed_references=("mdb-1",),
+    license_url="https://a.org/license",
 )
 MODIFIED = datetime(2026, 9, 1, tzinfo=UTC)
 
@@ -190,7 +205,9 @@ def test_a_feed_entry_carries_roles_state_size_and_place():
         "md:mdb-1:static": SourceStatus("md:mdb-1:static", "up", since=since),
         "md:mdb-2:rt": SourceStatus("md:mdb-2:rt", "up", since=NOW),
     }
-    document = json.loads(artifacts.feeds_document([feed], statuses, NOW))
+    document = json.loads(
+        artifacts.feeds_document([feed], statuses, NOW, sources=[STATIC, REALTIME])
+    )
     assert document["count"] == 1
     (entry,) = document["feeds"]
     assert entry["feedId"] == feed.feed_id
@@ -208,6 +225,11 @@ def test_a_feed_entry_carries_roles_state_size_and_place():
     assert entry["since"] == NOW.isoformat()
     assert (entry["country_code"], entry["lat"]) == ("US", 40.0)
     assert "auth" not in entry
+    assert entry["licenses"] == ["https://a.org/license"]
+    assert entry["catalogLinks"] == [
+        "https://mobilitydatabase.org/feeds/gtfs/mdb-1",
+        "https://mobilitydatabase.org/feeds/gtfs_rt/mdb-2",
+    ]
 
 
 def test_a_feed_lists_the_answering_schedule_first():

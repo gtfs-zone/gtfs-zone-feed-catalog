@@ -46,7 +46,7 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds cape-flier builds), place. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds cape-flier builds), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since); also what a snapshot hashes |
 | `examples.json` | The curated set, ready to load, each with the `feedId` its rows landed in |
@@ -54,6 +54,11 @@ The published documents, all shaped in `artifacts.py`:
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
 | `sitemap.xml` | Every indexable feed page, `lastmod` the day its fragments last changed |
+
+`sources.json`, `feeds.json` and `manifest.json` carry a top-level `attribution`
+(`artifacts.ATTRIBUTION`): Transitland Atlas is CC-BY 4.0 and must be credited
+with a link; the Mobility Database catalog is CC0. Feed contents are licensed by
+their publishers.
 
 Storage is shaped so it does not grow with feeds x days: `endpoint_state` holds
 one row per **state change**, not per check, so a URL up for a year is one row.
