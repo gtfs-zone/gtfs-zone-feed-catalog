@@ -636,7 +636,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
-    { name = "railroad-club", git = "https://git.kcfam.us/gtfs.zone/railroad-club.git" },
+    { name = "railroad-club", git = "https://github.com/gtfs-zone/railroad-club.git" },
     { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
@@ -1653,7 +1653,7 @@ wheels = [
 [[package]]
 name = "railroad-club"
 version = "0.1.0"
-source = { git = "https://git.kcfam.us/gtfs.zone/railroad-club.git#0952383e670c89a4fe559956750941e5a9dedafb" }
+source = { git = "https://github.com/gtfs-zone/railroad-club.git#647f187940e698cf7d507c3250e39511d9d5d9b9" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
