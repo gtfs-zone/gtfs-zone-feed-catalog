@@ -8,11 +8,12 @@ shape of what consumers fetch is testable without a bucket.
 `vehiclesUrl`, `tripUpdatesUrl`, `alertsUrl`) as a compatible subset, so a
 consumer moves over by changing where it fetches rather than how it reads. The
 new fields sit alongside in snake_case. ``rowId`` values are now namespaced by
-catalog (`tl:`, `md:`, `curated:`), which is the one deliberate break.
+catalog (`tl:`, `md:`, `gz:`), which is the one deliberate break.
 
 ``feeds.json`` is the layer consumers list: one entry per logical feed, which
-references its rows by ``rowId``. ``status.json`` stays per row; a feed's state
-is carried on the feed itself.
+references its rows by ``rowId``. ``search.json`` is the same feeds cut down to
+what a feed picker lists and searches over. ``status.json`` stays per row; a
+feed's state is carried on the feed itself.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ from geometry_car.urls import normalize_url
 
 if TYPE_CHECKING:
     from geometry_car.assets.check_history import SourceStatus
-    from geometry_car.assets.curated_examples import CuratedExample
     from geometry_car.assets.feed_contents import FeedContent
     from geometry_car.assets.feeds import Feed
 
@@ -127,8 +127,6 @@ def source_row(source: Source, status: SourceStatus | None) -> dict[str, Any]:
         row["auth"] = source.authentication_type
     if source.license_url:
         row["license_url"] = source.license_url
-    if source.note:
-        row["note"] = source.note
     if status is not None:
         row["state"] = status.state
     return row
@@ -148,16 +146,32 @@ def sources_document(
 
 
 def feed_since(feed: Feed, statuses: dict[str, SourceStatus]) -> datetime | None:
-    """When the feed's overall state was reached, from its rows' histories.
+    """When the feed's state was reached, from its rows' histories.
 
-    Up since its last row came up; down since its earliest still-down row went
-    down. Null until the history has been written at least once.
+    Up since its last row came up. Down or partial since the earliest
+    still-down row among those filling the roles that make it so: the schedule
+    for a down feed that has one, else every down role. Null until the history
+    has been written at least once.
     """
-    members = [statuses[m] for m in feed.members if m in statuses]
-    sinces = [s.since for s in members if s.state == feed.state and s.since]
-    if not sinces:
+    if feed.state == "up":
+        sinces = [
+            s.since
+            for m in feed.members
+            if (s := statuses.get(m)) and s.state == "up" and s.since
+        ]
+        return max(sinces) if sinces else None
+    if feed.state not in ("down", "partial"):
         return None
-    return max(sinces) if feed.state == "up" else min(sinces)
+    down = {role for role, state in feed.role_state.items() if state == "down"}
+    if feed.state == "down" and "scheduled" in down:
+        down = {"scheduled"}
+    rows = {member for member, role in feed.member_roles if role in down}
+    sinces = [
+        s.since
+        for m in rows
+        if (s := statuses.get(m)) and s.state == "down" and s.since
+    ]
+    return min(sinces) if sinces else None
 
 
 def feed_content(
@@ -210,6 +224,8 @@ def feed_entry(
         # Last-Modified are the ones published for a schedule.
         "urls": {role: list(urls) for role, urls in feed.urls.items()},
     }
+    if feed.subtitle:
+        entry["subtitle"] = feed.subtitle
     if feed.auth_roles:
         entry["auth"] = list(feed.auth_roles)
     if feed.static_bytes is not None:
@@ -276,71 +292,82 @@ def status_document(statuses: dict[str, SourceStatus], generated_at: datetime) -
     )
 
 
-def example_document(
-    examples: list[CuratedExample],
+def alt_names(
+    feed: Feed, rows: list[Source], content: FeedContent | None = None
+) -> list[str]:
+    """Every other name the feed goes by: its rows', operators' and agencies'."""
+    names = {row.name for row in rows} | {row.operator_name for row in rows}
+    if content is not None:
+        names |= {a.get("name") or "" for a in content.facts.get("agencies") or []}
+        names.add((content.facts.get("feedInfo") or {}).get("publisher") or "")
+    names -= {"", feed.name}
+    return sorted(name for name in names if name.strip())
+
+
+def search_entry(
+    feed: Feed,
     statuses: dict[str, SourceStatus],
-    feeds: list[Feed],
-    generated_at: datetime,
-) -> bytes:
-    """The curated set in the shape interlocking's FeedSelection already has.
-
-    Emitted ready to use rather than as raw rows, because the whole point of
-    this set is that picking one entry is a complete, working choice.
-    """
-    feed_of = {member: feed.feed_id for feed in feeds for member in feed.members}
-    entries = []
-    for example in examples:
-        scheduled = example.scheduled
-        realtime = example.realtime
-        selection: dict[str, Any] = {
-            "scheduled": {
-                "kind": "url",
-                "url": scheduled.get("url", ""),
-                "useCors": bool(scheduled.get("use_cors")),
-                "label": scheduled.get("label", example.name),
-            }
-            if scheduled
-            else None,
-            "realtime": {
-                key: realtime[role]
-                for role, key in (
-                    ("vehicles", "vehiclesUrl"),
-                    ("trip_updates", "tripUpdatesUrl"),
-                    ("alerts", "alertsUrl"),
-                )
-                if realtime.get(role)
-            }
-            | {
-                "useCors": bool(realtime.get("use_cors")),
-                "label": realtime.get("label", f"{example.name} RT"),
-            }
-            if realtime
-            else None,
-        }
-        entry: dict[str, Any] = {
-            "slug": example.slug,
-            "name": example.name,
-            "description": example.description,
-            "selection": selection,
-            "state": {
-                half: getattr(
-                    statuses.get(f"curated:{example.slug}:{suffix}"), "state", "unknown"
-                )
-                for half, suffix in (("scheduled", "static"), ("realtime", "rt"))
-            },
-        }
-        if example.note:
-            entry["note"] = example.note
-        # The logical feed the example's rows landed in, so a consumer can
-        # tell which catalog feed it already covers.
-        feed_id = feed_of.get(f"curated:{example.slug}:static") or feed_of.get(
-            f"curated:{example.slug}:rt"
+    contents: dict[str, FeedContent] | None = None,
+    rows: dict[str, Source] | None = None,
+) -> dict[str, Any]:
+    """One feed in search.json. Keys are short: the file is fetched whole by
+    every app's feed picker. See feed_entry for what each field means."""
+    members = [rows[m] for m in feed.members if m in (rows or {})]
+    place = feed.place
+    entry: dict[str, Any] = {
+        "i": feed.feed_id,
+        "n": feed.name,
+        "st": feed.state,
+        "rs": dict(feed.role_state),
+        "u": {role: list(urls) for role, urls in feed.urls.items()},
+    }
+    if feed.subtitle:
+        entry["s"] = feed.subtitle
+    if names := alt_names(feed, members, feed_content(feed, contents)):
+        entry["a"] = names
+    # Municipality, subdivision, country: what a place search matches and a
+    # place line shows.
+    if parts := [
+        part
+        for part in (
+            place.municipality,
+            place.subdivision,
+            place.country or place.country_code,
         )
-        if feed_id:
-            entry["feedId"] = feed_id
-        entries.append(entry)
+        if part
+    ]:
+        entry["p"] = parts
+    if place.country_code:
+        entry["cc"] = place.country_code
+    if place.placed:
+        entry["ll"] = [round(place.latitude, 5), round(place.longitude, 5)]
+    if feed.auth_roles:
+        entry["au"] = list(feed.auth_roles)
+    if feed.static_bytes is not None:
+        entry["b"] = feed.static_bytes
+    if feed.last_modified is not None:
+        entry["m"] = feed.last_modified.date().isoformat()
+    if (since := feed_since(feed, statuses)) is not None:
+        entry["since"] = since.date().isoformat()
+    return entry
 
-    return dumps({"generated_at": generated_at.isoformat(), "examples": entries})
+
+def search_document(
+    feeds: list[Feed],
+    statuses: dict[str, SourceStatus],
+    generated_at: datetime,
+    contents: dict[str, FeedContent] | None = None,
+    sources: list[Source] | None = None,
+) -> bytes:
+    rows = {source.source_id: source for source in sources or []}
+    return dumps(
+        {
+            "generated_at": generated_at.isoformat(),
+            "attribution": ATTRIBUTION,
+            "count": len(feeds),
+            "feeds": [search_entry(f, statuses, contents, rows) for f in feeds],
+        }
+    )
 
 
 def summary_document(

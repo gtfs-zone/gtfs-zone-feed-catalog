@@ -9,7 +9,8 @@ artifacts to a Garage bucket served at `data.gtfs.zone`.
 
 The artifacts replace the build-time `public/atlas-feeds.json` that
 `coloring-book` and `test-track` each shipped their own stale copy of, and the
-hand-curated `EXAMPLES` list that used to live in `interlocking`.
+hand-curated `EXAMPLES` list that used to live in `interlocking`; the feeds
+rt.gtfs.zone serves come from cafe-car's own catalog.
 
 ## Commands
 
@@ -32,7 +33,7 @@ order:
 |---|---|
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
-| `curated_examples` | The hand-curated set, as declarative source data in `data/examples.yaml` |
+| `cafe_car` | The feeds rt.gtfs.zone serves, from cafe-car's public `GET /feeds` (`CAFE_CAR_CATALOG_URL`) |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
@@ -49,7 +50,7 @@ The published documents, all shaped in `artifacts.py`:
 | `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds cape-flier builds), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since); also what a snapshot hashes |
-| `examples.json` | The curated set, ready to load, each with the `feedId` its rows landed in |
+| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, state, `roleState`, URLs, auth, size, date. What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
@@ -86,7 +87,10 @@ No fuzzy name matching and no override file yet, so the rules **can
 false-merge** (a regional schedule that several agencies' realtime feeds all
 reference makes them one feed; PTV's nested-zip feeds sharing one download are
 one feed) and a wrong link can only be undone by changing the rules. Names:
-curated > Mobility Database > Transitland. Coordinates: any placed member.
+a Transitland operator, then a Mobility Database provider (its feed_name
+becomes the feed's `subtitle`), then the schedule's own single agency or
+publisher from the content report, then any row's name. Coordinates: any
+placed member.
 
 Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
 each group takes the id of the existing feed it shares the most members with
@@ -118,6 +122,7 @@ unplaced count is published and shown, not hidden.
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
 | `CONTENT_REPORT_BASE` | Where cape-flier's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
+| `CAFE_CAR_CATALOG_URL` | cafe-car's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |

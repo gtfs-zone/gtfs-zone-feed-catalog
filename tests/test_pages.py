@@ -28,7 +28,7 @@ ROWS = [
         kind="static",
         feed_id="mdb-1",
         name="Bay </script> & Transit",
-        operator_name="Bay Transit",
+        operator_name="Bay </script> & Transit",
         urls={"scheduled": "https://example.org/bay.zip"},
         place=PLACE,
         license_url="https://example.org/license",
@@ -94,7 +94,9 @@ def test_the_dataset_carries_downloads_place_and_license():
         doc["spatialCoverage"]["geo"]["box"]
         == "37.50000 -122.50000 38.00000 -122.00000"
     )
-    assert doc["creator"] == [{"@type": "Organization", "name": "Bay Transit"}]
+    assert doc["creator"] == [
+        {"@type": "Organization", "name": "Bay </script> & Transit"}
+    ]
     assert doc["alternateName"] == ["Bay Transit RT"]
     assert "from Mobility Database." in doc["description"]
 

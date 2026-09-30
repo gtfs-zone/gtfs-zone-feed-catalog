@@ -46,14 +46,21 @@ ROLE_LABELS = {
     "vehicles": "Vehicle positions",
     "trip_updates": "Trip updates",
     "alerts": "Service alerts",
+    "realtime": "GTFS Realtime",
 }
 ROLE_FORMATS = {
     "scheduled": "application/zip",
     "vehicles": "application/x-protobuf",
     "trip_updates": "application/x-protobuf",
     "alerts": "application/x-protobuf",
+    "realtime": "application/x-protobuf",
 }
-STATE_LABELS = {"up": "Up", "down": "Down", "unknown": "Inaccessible"}
+STATE_LABELS = {
+    "up": "Up",
+    "partial": "Partial",
+    "down": "Down",
+    "unknown": "Inaccessible",
+}
 OUTCOME_LABELS = {
     "ok": "a valid GTFS zip",
     "not_zip": "not a zip file",
@@ -74,7 +81,7 @@ SNIFF_LABELS = {
 CATALOG_LABELS = {
     "transitland": "Transitland",
     "mobilitydatabase": "Mobility Database",
-    "curated": "gtfs.zone examples",
+    "gtfszone": "rt.gtfs.zone",
 }
 
 
@@ -123,9 +130,9 @@ def _catalogs(rows: list[Source]) -> str:
     names = [
         label
         for catalog, label in CATALOG_LABELS.items()
-        if catalog != "curated" and any(row.catalog == catalog for row in rows)
+        if any(row.catalog == catalog for row in rows)
     ]
-    return " and ".join(names) or "the gtfs.zone examples"
+    return " and ".join(names)
 
 
 def description(feed: Feed, rows: list[Source], since: datetime | None) -> str:
@@ -153,13 +160,14 @@ def viewer_url(feed: Feed) -> str | None:
     if not scheduled or not _has_realtime(feed):
         return None
     params = {"scheduled": scheduled}
-    for role, key in (
-        ("vehicles", "rt_vp"),
-        ("trip_updates", "rt_tu"),
-        ("alerts", "rt_al"),
-    ):
+    slots = (("vehicles", "rt_vp"), ("trip_updates", "rt_tu"), ("alerts", "rt_al"))
+    for role, key in slots:
         if urls := feed.urls.get(role):
             params[key] = urls[0]
+    # An endpoint of undeclared type takes the first empty slot.
+    empty = next((key for _, key in slots if key not in params), None)
+    if (untyped := feed.urls.get("realtime")) and empty:
+        params[empty] = untyped[0]
     return f"{VIEWER_BASE}/#{urlencode(params)}"
 
 
@@ -350,7 +358,7 @@ def body_fragment(
 
     out.append("<h2>Catalog entries</h2>")
     out.append("<ul>")
-    # Curated static and rt rows share a name and id; list them once.
+    # A catalog's static and rt rows can share a name and id; list them once.
     seen: set[str] = set()
     for row in rows:
         catalog = CATALOG_LABELS.get(row.catalog, row.catalog)

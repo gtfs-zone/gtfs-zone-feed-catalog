@@ -199,13 +199,13 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
         if not feed_id or not url:
             continue
         # One endpoint, one URL, however many entity types it declares. A feed
-        # that declares none is still realtime; treat it as vehicle positions so
-        # it is checked rather than silently dropped.
+        # that declares none is still realtime; it takes the untyped `realtime`
+        # role so it is checked rather than silently dropped.
         roles = {
             ENTITY_ROLES[entity]
             for entity in feed.get("entity_types") or []
             if entity in ENTITY_ROLES
-        } or {"vehicles"}
+        } or {"realtime"}
         place = place_of(feed)
         rows.extend(
             row.with_place(place)
@@ -217,6 +217,7 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
                 vehicles=url if "vehicles" in roles else "",
                 trip_updates=url if "trip_updates" in roles else "",
                 alerts=url if "alerts" in roles else "",
+                realtime=url if "realtime" in roles else "",
                 **_common(feed),
             )
         )
@@ -230,7 +231,7 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
 def mobility_database() -> list[Source]:
     if not settings.mobility_db_refresh_token:
         # Not a failure: a developer without the token still gets a usable run
-        # off Transitland and the curated set.
+        # off Transitland and cafe-car.
         log.warning("MOBILITY_DB_REFRESH_TOKEN is unset; skipping the catalog")
         return []
 

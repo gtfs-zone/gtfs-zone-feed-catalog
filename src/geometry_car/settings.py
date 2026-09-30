@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     mobility_db_refresh_token: str = ""
     mobility_db_base_url: str = "https://api.mobilitydatabase.org/v1"
 
+    # cafe-car's public feed catalog: the feeds rt.gtfs.zone serves itself.
+    # Empty skips it.
+    cafe_car_catalog_url: str = "https://rt.gtfs.zone/feeds"
+
     # Endpoint checking. Ten thousand outbound requests from one home IP is a
     # monitor only if it stays polite: a global cap, one request at a time per
     # host, and a pause between them.

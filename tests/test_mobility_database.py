@@ -164,14 +164,14 @@ def test_realtime_feed_references_are_carried_to_link_the_schedule():
     assert build_realtime_sources([feed])[0].feed_references == ("mdb-10", "mdb-11")
 
 
-def test_a_realtime_feed_declaring_no_entity_types_is_still_checked():
+def test_a_realtime_feed_declaring_no_entity_types_is_untyped():
     feed = gtfs_feed(
         "mdb-bare",
         data_type="gtfs_rt",
         source_info={"producer_url": "https://example.org/bare.pb"},
     )
     assert build_realtime_sources([feed])[0].urls == {
-        "vehicles": "https://example.org/bare.pb"
+        "realtime": "https://example.org/bare.pb"
     }
 
 

@@ -1,4 +1,4 @@
-"""The three catalogs merged into one list - cross-linked, not collapsed.
+"""Every catalog merged into one list - cross-linked, not collapsed.
 
 Transitland and the Mobility Database describe overlapping worlds with
 different ids, different names and different metadata, and neither is a superset
@@ -21,7 +21,6 @@ from collections import defaultdict
 
 from dagster import asset
 
-from geometry_car.assets.curated_examples import CuratedExample, example_sources
 from geometry_car.catalog import Source
 from geometry_car.urls import normalize_url
 
@@ -76,11 +75,9 @@ def merge(*groups: list[Source]) -> list[Source]:
 def sources(
     transitland_atlas: list[Source],
     mobility_database: list[Source],
-    curated_examples: list[CuratedExample],
+    cafe_car: list[Source],
 ) -> list[Source]:
-    rows = cross_link(
-        merge(transitland_atlas, mobility_database, example_sources(curated_examples))
-    )
+    rows = cross_link(merge(transitland_atlas, mobility_database, cafe_car))
 
     placed = sum(1 for row in rows if row.place.placed)
     cross_linked = sum(1 for row in rows if row.same_endpoint_as)

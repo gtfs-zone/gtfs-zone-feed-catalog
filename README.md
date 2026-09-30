@@ -9,7 +9,7 @@ artifacts to object storage at `data.gtfs.zone`.
 
 Every consumer used to ship its own copy of a build-time feed catalog with no
 liveness signal. This replaces that: one pipeline produces `sources.json`,
-`status.json`, `examples.json`, `summary.json` and a `manifest.json` consumers
+`feeds.json`, `search.json`, `status.json`, `summary.json` and a `manifest.json` consumers
 poll to decide whether to refetch, plus deduplicated dated snapshots.
 
 Reachability is checked with a HEAD request, falling back to a ranged GET when
@@ -30,8 +30,8 @@ at a sibling checkout of `transitland/transitland-atlas` so runs read the DMFR
 corpus from disk rather than the GitHub API.
 
 Without `DATABASE_URL` the run still works and still publishes; it just keeps no
-history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland and the
-curated set alone. Neither is an error, so a first local run needs neither.
+history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland and
+cafe-car's catalog alone. Neither is an error, so a first local run needs neither.
 
 Trigger the first run from the Dagster UI rather than waiting for the schedule.
 

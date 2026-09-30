@@ -33,6 +33,7 @@ from sqlalchemy import delete, insert, select, update
 
 from geometry_car.assets.check_history import DOWN, UNKNOWN, UP
 from geometry_car.assets.endpoint_checks import CheckResult, result_key
+from geometry_car.assets.feed_contents import FeedContent
 from geometry_car.catalog import RT_ROLES, Place, Source
 from geometry_car.database import get_session_factory
 from geometry_car.history.models import FeedMember, FeedRecord, SourceRecord
@@ -41,8 +42,8 @@ from geometry_car.urls import normalize_url, rt_sibling_key
 
 log = logging.getLogger(__name__)
 
-# Whose name a feed takes, best first.
-NAME_PRIORITY = {"curated": 0, "mobilitydatabase": 1, "transitland": 2}
+# A feed whose schedule answers but some realtime role does not.
+PARTIAL = "partial"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +59,8 @@ class Feed:
     urls: dict[str, tuple[str, ...]]
     # role -> up when any of its URLs answers, so a consumer can load it.
     role_state: dict[str, str]
-    # up only when every checkable URL answers.
+    # From role_state: down when the schedule is, partial when the schedule is
+    # up and a realtime role is down, up when nothing checked is down.
     state: str
     place: Place
     # From the best scheduled URL: up first, then the most recently modified.
@@ -66,6 +68,9 @@ class Feed:
     last_modified: datetime | None = None
     # Roles whose every URL needs an API key we do not hold, so none is checked.
     auth_roles: tuple[str, ...] = ()
+    # What tells this feed apart from others of the same name: a Mobility
+    # Database feed_name such as "Rail" or "Bus".
+    subtitle: str = ""
 
 
 class _UnionFind:
@@ -168,21 +173,78 @@ def _any_up(states: list[str]) -> str:
     return DOWN if DOWN in states else UNKNOWN
 
 
-def _all_up(states: list[str]) -> str:
-    checked = [state for state in states if state != UNKNOWN]
+def feed_state(role_state: dict[str, str]) -> str:
+    """One state for the feed, led by its schedule.
+
+    A realtime role that is down makes an answering schedule partial, not down.
+    Without a checked schedule the realtime roles decide on their own.
+    """
+    scheduled = role_state.get("scheduled", UNKNOWN)
+    realtime = [s for role, s in role_state.items() if role != "scheduled"]
+    if scheduled == DOWN:
+        return DOWN
+    if scheduled == UP:
+        return PARTIAL if DOWN in realtime else UP
+    checked = [s for s in realtime if s != UNKNOWN]
     if not checked:
         return UNKNOWN
-    return UP if all(state == UP for state in checked) else DOWN
+    if all(s == UP for s in checked):
+        return UP
+    return PARTIAL if UP in checked else DOWN
 
 
-def _name_order(row: Source) -> tuple[int, int, str]:
-    return (NAME_PRIORITY.get(row.catalog, 9), row.kind != "static", row.source_id)
+def _provider(row: Source) -> str:
+    """A Mobility Database row's provider, without its "(feed_name)"."""
+    return row.operator_name if row.catalog == "mobilitydatabase" else ""
+
+
+def _feed_name(row: Source) -> str:
+    """The "(feed_name)" part of a Mobility Database row name, if any."""
+    prefix = f"{row.operator_name} ("
+    if row.name.startswith(prefix) and row.name.endswith(")"):
+        return row.name[len(prefix) : -1]
+    return ""
+
+
+def content_agency(content: FeedContent | None) -> str:
+    """The name the schedule gives itself: its one agency, else its publisher."""
+    if content is None:
+        return ""
+    agencies = [a["name"] for a in content.facts.get("agencies") or [] if a.get("name")]
+    if len(agencies) == 1:
+        return agencies[0]
+    return (content.facts.get("feedInfo") or {}).get("publisher") or ""
+
+
+def feed_name(rows: list[Source], content: FeedContent | None = None) -> str:
+    """The first of: a Transitland operator, a Mobility Database provider, the
+    schedule's own agency, then any row's name. Static rows first throughout."""
+    ordered = sorted(rows, key=lambda row: (row.kind != "static", row.source_id))
+    candidates = [
+        *(r.name for r in ordered if r.catalog == "transitland" and r.operator_name),
+        *(_provider(r) for r in ordered),
+        content_agency(content),
+        *(r.name for r in ordered if r.catalog == "mobilitydatabase"),
+        *(r.name for r in ordered),
+    ]
+    return next((name for name in candidates if name.strip()), "")
+
+
+def feed_subtitle(rows: list[Source], name: str) -> str:
+    """The Mobility Database feed_name under a provider the feed is named for."""
+    ordered = sorted(rows, key=lambda row: (row.kind != "static", row.source_id))
+    return next(
+        (sub for r in ordered if _provider(r) == name and (sub := _feed_name(r))), ""
+    )
 
 
 def build_feed(
-    feed_id: str, members: list[Source], results: dict[str, CheckResult]
+    feed_id: str,
+    members: list[Source],
+    results: dict[str, CheckResult],
+    contents: dict[str, FeedContent] | None = None,
 ) -> Feed:
-    ordered = sorted(members, key=_name_order)
+    ordered = sorted(members, key=lambda row: (row.kind != "static", row.source_id))
 
     urls: dict[str, dict[str, str]] = defaultdict(dict)
     member_roles: list[tuple[str, str]] = []
@@ -232,18 +294,30 @@ def build_feed(
         None,
     )
 
+    content = next(
+        (
+            found
+            for url in ranked.get("scheduled", [])
+            if (found := (contents or {}).get(normalize_url(url) or url))
+        ),
+        None,
+    )
+    name = feed_name(members, content)
+    role_state = {role: _any_up(role_states) for role, role_states in states.items()}
+
     return Feed(
         feed_id=feed_id,
-        name=ordered[0].name,
+        name=name,
         members=tuple(sorted(row.source_id for row in members)),
         member_roles=tuple(sorted(member_roles)),
         urls={role: tuple(role_urls) for role, role_urls in ranked.items()},
-        role_state={role: _any_up(role_states) for role, role_states in states.items()},
-        state=_all_up([s for role_states in states.values() for s in role_states]),
+        role_state=role_state,
+        state=feed_state(role_state),
         place=place,
         static_bytes=best.content_length if best else None,
         last_modified=best.last_modified if best else None,
         auth_roles=auth_roles,
+        subtitle=feed_subtitle(members, name),
     )
 
 
@@ -311,12 +385,13 @@ def build_feeds(
     rows: list[Source],
     results: dict[str, CheckResult],
     existing: dict[str, set[str]],
+    contents: dict[str, FeedContent] | None = None,
 ) -> list[Feed]:
     groups = group(rows)
     ids = assign_ids([[row.source_id for row in g] for g in groups], existing)
     return sorted(
         (
-            build_feed(feed_id, g, results)
+            build_feed(feed_id, g, results, contents)
             for feed_id, g in zip(ids, groups, strict=True)
         ),
         key=lambda feed: feed.feed_id,
@@ -328,9 +403,13 @@ def build_feeds(
     # Ordering only: members reference source rows check_history writes.
     deps=["check_history"],
 )
-def feeds(sources: list[Source], endpoint_checks: dict[str, CheckResult]) -> list[Feed]:
+def feeds(
+    sources: list[Source],
+    endpoint_checks: dict[str, CheckResult],
+    feed_contents: dict[str, FeedContent],
+) -> list[Feed]:
     existing = load_existing() if settings.database_url else {}
-    result = build_feeds(sources, endpoint_checks, existing)
+    result = build_feeds(sources, endpoint_checks, existing, feed_contents)
     if settings.database_url:
         persist(result)
     else:

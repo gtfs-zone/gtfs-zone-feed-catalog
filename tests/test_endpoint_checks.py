@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 import httpx
 import respx
 
-from geometry_car.assets.curated_examples import example_sources, load_examples
 from geometry_car.assets.endpoint_checks import (
     CheckResult,
     check_targets,
@@ -139,8 +138,16 @@ def test_a_feed_needing_an_api_key_is_skipped_not_failed():
     )
 
 
-def test_path_only_curated_urls_are_skipped_as_relative():
-    _targets, skipped = check_targets(example_sources(load_examples()))
+def test_path_only_urls_are_skipped_as_relative():
+    row = Source(
+        source_id="gz:amtrak:rt",
+        catalog="gtfszone",
+        kind="rt",
+        feed_id="amtrak",
+        name="amtrak",
+        urls={"vehicles": "/amtrak/vehicle_positions.pb"},
+    )
+    _targets, skipped = check_targets([row])
     assert skipped["/amtrak/vehicle_positions.pb"].error_class == "relative"
     assert skipped["/amtrak/vehicle_positions.pb"].skipped
 

@@ -25,8 +25,7 @@ def normalize_url(url: str) -> str:
     Lowercases the scheme and host, drops a default port, drops a trailing
     slash on an empty path, sorts query parameters and drops the fragment.
     http and https are *not* unified: a plain-http endpoint is a materially
-    different thing to check, and several curated entries exist only in that
-    form.
+    different thing to check, and some feeds exist only in that form.
     """
     url = url.strip()
     if not is_absolute(url):

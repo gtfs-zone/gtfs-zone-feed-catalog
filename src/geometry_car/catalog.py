@@ -18,9 +18,10 @@ from geometry_car.urls import is_absolute
 Kind = Literal["static", "rt"]
 
 # Which URL roles belong to which kind. A static row carries exactly one URL; an
-# rt row carries up to three, and needs at least one.
+# rt row carries at least one of the realtime roles. `realtime` is an endpoint
+# whose entity types the catalog does not declare.
 STATIC_ROLES = ("scheduled",)
-RT_ROLES = ("vehicles", "trip_updates", "alerts")
+RT_ROLES = ("vehicles", "trip_updates", "alerts", "realtime")
 
 # Field names the old public/atlas-feeds.json used, by role.
 ATLAS_URL_KEYS = {
@@ -28,6 +29,7 @@ ATLAS_URL_KEYS = {
     "vehicles": "vehiclesUrl",
     "trip_updates": "tripUpdatesUrl",
     "alerts": "alertsUrl",
+    "realtime": "realtimeUrl",
 }
 
 
@@ -54,16 +56,16 @@ class Source:
     """One selectable endpoint set, from one catalog."""
 
     source_id: str
-    catalog: Literal["transitland", "mobilitydatabase", "curated"]
+    catalog: Literal["transitland", "mobilitydatabase", "gtfszone"]
     kind: Kind
     # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, or a
-    # curated slug.
+    # cafe-car feed name.
     feed_id: str
     name: str
     operator_name: str = ""
     # Where the row came from: the DMFR filename's domain, or the MDB provider.
     origin: str = ""
-    # role -> URL. Curated realtime URLs may be path-only; see examples.yaml.
+    # role -> URL.
     urls: dict[str, str] = field(default_factory=dict)
     place: Place = field(default_factory=Place)
     # MDB feed lifecycle: active / deprecated / inactive / development / future.
@@ -78,8 +80,6 @@ class Source:
     # MDB realtime only: the catalog feed ids (mdb-NNNN) of the static feeds
     # this endpoint describes.
     feed_references: tuple[str, ...] = ()
-    # Free text carried from the curated set, where it is the expensive part.
-    note: str = ""
 
     @property
     def roles(self) -> tuple[str, ...]:
@@ -89,8 +89,7 @@ class Source:
     def check_urls(self) -> tuple[str, ...]:
         """Absolute URLs worth checking, in role order.
 
-        Path-only curated realtime URLs are excluded: they resolve against each
-        app's own RT base at fetch time and there is no one host to check.
+        A path-only URL is excluded: there is no one host to check it against.
         """
         return tuple(
             url for role in self.roles if is_absolute(url := self.urls.get(role, ""))
@@ -115,19 +114,20 @@ def make_rows(
     vehicles: str = "",
     trip_updates: str = "",
     alerts: str = "",
+    realtime: str = "",
     **common: object,
 ) -> list[Source]:
     """Split one catalog feed into its static and rt rows.
 
-    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``curated``). A
+    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``gz``). A
     static row's id ends ``:static`` and an rt row's ``:rt`` only where one feed
     can produce both; the Mobility Database gives realtime its own mdb id, so
     it passes the kind suffix it wants in ``feed_id``.
     """
     # Catalogs carry stray whitespace around URLs; httpx reads a leading space
     # as a relative path.
-    scheduled, vehicles, trip_updates, alerts = (
-        u.strip() for u in (scheduled, vehicles, trip_updates, alerts)
+    scheduled, vehicles, trip_updates, alerts, realtime = (
+        u.strip() for u in (scheduled, vehicles, trip_updates, alerts, realtime)
     )
     base = {
         "catalog": catalog,
@@ -153,6 +153,7 @@ def make_rows(
             ("vehicles", vehicles),
             ("trip_updates", trip_updates),
             ("alerts", alerts),
+            ("realtime", realtime),
         )
         if url
     }

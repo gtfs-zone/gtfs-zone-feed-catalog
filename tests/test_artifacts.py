@@ -6,7 +6,6 @@ from datetime import UTC, date, datetime
 
 from geometry_car import artifacts
 from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.curated_examples import load_examples
 from geometry_car.assets.endpoint_checks import CheckResult
 from geometry_car.assets.feeds import build_feeds
 from geometry_car.catalog import Place, Source
@@ -75,28 +74,6 @@ def test_the_summary_publishes_the_unplaced_count():
     assert summary["unplaced"] == 0
     assert summary["by_state"] == {"up": 1}
     assert summary["by_country"] == {"US": 1}
-
-
-def test_examples_are_published_ready_to_load():
-    examples = load_examples()
-    statuses = {"curated:amtrak:static": SourceStatus("curated:amtrak:static", "up")}
-    document = json.loads(artifacts.example_document(examples, statuses, [], NOW))
-    amtrak = next(e for e in document["examples"] if e["slug"] == "amtrak")
-    assert amtrak["selection"]["scheduled"]["kind"] == "url"
-    assert amtrak["selection"]["scheduled"]["useCors"] is True
-    assert amtrak["selection"]["realtime"]["vehiclesUrl"] == (
-        "/amtrak/vehicle_positions.pb"
-    )
-    assert amtrak["state"] == {"scheduled": "up", "realtime": "unknown"}
-    # The notes are the expensive part of the set, so they are published too.
-    ripta = next(e for e in document["examples"] if e["slug"] == "ripta")
-    assert "403" in ripta["note"]
-
-
-def test_a_schedule_only_example_publishes_a_null_realtime_half():
-    document = json.loads(artifacts.example_document(load_examples(), {}, [], NOW))
-    west = next(e for e in document["examples"] if e["slug"] == "west-bus-service")
-    assert west["selection"]["realtime"] is None
 
 
 def test_the_snapshot_payload_ignores_the_timestamp():
@@ -311,21 +288,69 @@ def test_the_summary_counts_feeds_as_well_as_rows():
     }
 
 
-def test_an_example_names_the_feed_its_rows_landed_in():
-    examples = load_examples()
-    rows = [
-        Source(
-            source_id="curated:amtrak:static",
-            catalog="curated",
-            kind="static",
-            feed_id="amtrak",
-            name="Amtrak",
-            urls={"scheduled": "https://content.amtrak.com/content/gtfs/GTFS.zip"},
+def test_a_partial_feed_is_partial_since_its_down_realtime_row():
+    results = {
+        "https://a.org/gtfs.zip": CheckResult(
+            url="https://a.org/gtfs.zip", ok=True, checked_at=NOW
+        ),
+        "https://a.org/rt/vehicles": CheckResult(
+            url="https://a.org/rt/vehicles", ok=False, checked_at=NOW
+        ),
+    }
+    (feed,) = build_feeds([STATIC, REALTIME], results, {})
+    statuses = {
+        "md:mdb-1:static": SourceStatus("md:mdb-1:static", "up", since=NOW),
+        "md:mdb-2:rt": SourceStatus("md:mdb-2:rt", "down", since=MODIFIED),
+    }
+    entry = artifacts.feed_entry(feed, statuses)
+    assert (entry["state"], entry["since"]) == ("partial", MODIFIED.isoformat())
+
+
+def test_a_search_entry_is_the_feed_cut_down():
+    results = {
+        "https://a.org/gtfs.zip": CheckResult(
+            url="https://a.org/gtfs.zip",
+            ok=True,
+            checked_at=NOW,
+            content_length=4096,
+            last_modified=MODIFIED,
+        ),
+    }
+    operated = Source(
+        source_id="tl:f-metro:static",
+        catalog="transitland",
+        kind="static",
+        feed_id="f-metro",
+        name="Metro",
+        operator_name="Metro Transit Authority",
+        urls={"scheduled": "https://a.org/gtfs.zip"},
+    )
+    placed = STATIC.with_place(
+        Place(
+            country_code="US",
+            country="United States",
+            municipality="Newark",
+            latitude=40.0,
+            longitude=-74.0,
         )
-    ]
-    (feed,) = build_feeds(rows, {}, {})
-    document = json.loads(artifacts.example_document(examples, {}, [feed], NOW))
-    amtrak = next(e for e in document["examples"] if e["slug"] == "amtrak")
-    assert amtrak["feedId"] == feed.feed_id
-    mbta = next(e for e in document["examples"] if e["slug"] == "mbta")
-    assert "feedId" not in mbta
+    )
+    rows = [placed, REALTIME, operated]
+    (feed,) = build_feeds(rows, results, {})
+    document = json.loads(artifacts.search_document([feed], {}, NOW, sources=rows))
+    (entry,) = document["feeds"]
+    assert entry == {
+        "i": feed.feed_id,
+        "n": "Metro",
+        "a": ["Metro RT", "Metro Transit Authority"],
+        "st": "up",
+        "rs": {"scheduled": "up", "vehicles": "unknown"},
+        "u": {
+            "scheduled": ["https://a.org/gtfs.zip"],
+            "vehicles": ["https://a.org/rt/vehicles"],
+        },
+        "p": ["Newark", "United States"],
+        "cc": "US",
+        "ll": [40.0, -74.0],
+        "b": 4096,
+        "m": "2026-09-01",
+    }

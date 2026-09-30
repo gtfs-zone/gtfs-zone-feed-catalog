@@ -22,7 +22,6 @@ from railroad_club.object_store import ObjectNotFound, ObjectStore, get_object_s
 
 from geometry_car import artifacts, pages
 from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.curated_examples import CuratedExample
 from geometry_car.assets.feed_contents import FeedContent
 from geometry_car.assets.feeds import Feed
 from geometry_car.catalog import Source
@@ -126,7 +125,6 @@ def publish(
     sources: list[Source],
     feeds: list[Feed],
     statuses: dict[str, SourceStatus],
-    examples: list[CuratedExample],
     run_id: str,
     generated_at: datetime | None = None,
     contents: dict[str, FeedContent] | None = None,
@@ -140,10 +138,10 @@ def publish(
         "feeds.json": artifacts.feeds_document(
             feeds, statuses, generated_at, contents, sources
         ),
-        "status.json": artifacts.status_document(statuses, generated_at),
-        "examples.json": artifacts.example_document(
-            examples, statuses, feeds, generated_at
+        "search.json": artifacts.search_document(
+            feeds, statuses, generated_at, contents, sources
         ),
+        "status.json": artifacts.status_document(statuses, generated_at),
         "summary.json": artifacts.summary_document(
             sources, statuses, feeds, generated_at, contents
         ),
@@ -220,7 +218,7 @@ def publish(
 
 @asset(
     description=(
-        "sources, feeds, status, examples, summary, snapshot, manifest, "
+        "sources, feeds, search, status, summary, snapshot, manifest, "
         "feed pages and sitemap"
     ),
     # Ordering only: the CORS rule is in place before anything is published.
@@ -231,7 +229,6 @@ def published_artifacts(
     sources: list[Source],
     feeds: list[Feed],
     check_history: dict[str, SourceStatus],
-    curated_examples: list[CuratedExample],
     feed_contents: dict[str, FeedContent],
 ) -> None:
     store = get_object_store()
@@ -240,7 +237,6 @@ def published_artifacts(
         sources,
         feeds,
         check_history,
-        curated_examples,
         context.run_id,
         contents=feed_contents,
     )

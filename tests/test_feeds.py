@@ -1,14 +1,18 @@
 """Logical feeds: grouping rules, names, states and sticky ids."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from geometry_car.assets.check_history import DOWN, UNKNOWN, UP, fold, record
 from geometry_car.assets.endpoint_checks import CheckResult
+from geometry_car.assets.feed_contents import FeedContent
 from geometry_car.assets.feeds import (
+    PARTIAL,
     assign_ids,
     build_feeds,
+    feed_state,
     group,
     load_existing,
     persist,
@@ -24,7 +28,7 @@ def row(source_id: str, kind: str = "rt", **urls: str) -> Source:
     catalog, feed_id, _ = source_id.split(":")
     return Source(
         source_id=source_id,
-        catalog={"tl": "transitland", "md": "mobilitydatabase", "curated": "curated"}[
+        catalog={"tl": "transitland", "md": "mobilitydatabase", "gz": "gtfszone"}[
             catalog
         ],
         kind=kind,
@@ -102,14 +106,30 @@ def test_catalogs_sharing_a_url_and_one_feed_split_in_two_are_one_feed():
     assert len(group(rows)) == 1
 
 
-def test_name_prefers_curated_then_mobility_database_then_transitland():
-    rows = [
-        row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip"),
-        row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip"),
-    ]
-    assert build_feeds(rows, {}, {})[0].name == "md:mdb-1:static"
-    rows.append(row("curated:a:static", kind="static", scheduled="https://a.org/g.zip"))
-    assert build_feeds(rows, {}, {})[0].name == "curated:a:static"
+def test_name_prefers_an_operator_then_a_provider_then_the_agency():
+    tl = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
+    md = row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip")
+    gz = row("gz:a:static", kind="static", scheduled="https://a.org/g.zip")
+    # No operator or provider anywhere: a Mobility Database name, then any.
+    assert build_feeds([tl, gz], {}, {})[0].name == "gz:a:static"
+    assert build_feeds([tl, md, gz], {}, {})[0].name == "md:mdb-1:static"
+
+    content = FeedContent(
+        url="https://a.org/g.zip",
+        outcome="ok",
+        checked=NOW.date(),
+        since=NOW.date(),
+        facts={"agencies": [{"name": "A Transit"}]},
+    )
+    contents = {"https://a.org/g.zip": content}
+    assert build_feeds([tl, md], {}, {}, contents)[0].name == "A Transit"
+
+    provided = replace(md, name="Metro (Bus)", operator_name="Metro")
+    (feed,) = build_feeds([tl, provided], {}, {}, contents)
+    assert (feed.name, feed.subtitle) == ("Metro", "Bus")
+
+    operated = replace(tl, name="MTA", operator_name="Metro Transit Authority")
+    assert build_feeds([operated, provided], {}, {}, contents)[0].name == "MTA"
 
 
 def test_coordinates_come_from_any_placed_member():
@@ -122,7 +142,7 @@ def test_coordinates_come_from_any_placed_member():
     assert build_feeds(rows, {}, {})[0].place == place
 
 
-def test_role_state_is_usable_when_any_url_answers_and_overall_needs_all():
+def test_role_state_is_usable_when_any_url_answers():
     rows = [
         row("tl:f-a:static", kind="static", scheduled="https://a.org/old.zip"),
         row("tl:f-a:rt", vehicles="https://a.org/rt/vehicles"),
@@ -153,16 +173,51 @@ def test_role_state_is_usable_when_any_url_answers_and_overall_needs_all():
     }
     (feed,) = build_feeds(rows, results, {})
     assert feed.role_state == {"scheduled": UP, "vehicles": UP}
-    assert feed.state == DOWN
+    # A dead duplicate does not take the feed down while another URL answers.
+    assert feed.state == UP
     # The size comes from the schedule that answers, not the dead one.
     assert feed.static_bytes == 2048
     assert feed.last_modified == NOW
 
 
 def test_a_feed_with_nothing_checked_is_unknown():
-    (feed,) = build_feeds([row("curated:a:rt", vehicles="/amtrak/vp.pb")], {}, {})
+    (feed,) = build_feeds([row("gz:a:rt", vehicles="/amtrak/vp.pb")], {}, {})
     assert feed.state == UNKNOWN
     assert feed.role_state == {"vehicles": UNKNOWN}
+
+
+def test_the_schedule_leads_the_feed_state():
+    assert feed_state({"scheduled": UP, "vehicles": UP}) == UP
+    assert feed_state({"scheduled": UP, "vehicles": DOWN}) == PARTIAL
+    assert feed_state({"scheduled": UP, "vehicles": UNKNOWN}) == UP
+    assert feed_state({"scheduled": DOWN, "vehicles": UP}) == DOWN
+    # Without a checked schedule the realtime roles decide.
+    assert feed_state({"vehicles": UP, "alerts": DOWN}) == PARTIAL
+    assert feed_state({"vehicles": DOWN}) == DOWN
+    assert feed_state({"scheduled": UNKNOWN, "vehicles": UP}) == UP
+    assert feed_state({}) == UNKNOWN
+
+
+def test_one_dead_realtime_duplicate_leaves_the_feed_up():
+    # Two catalogs list the same trip updates, one with a typo in the URL.
+    rows = [
+        row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip"),
+        row("md:mdb-2:rt", trip_updates="https://a.org/TripUpdate.pb"),
+        row("md:mdb-3:rt", trip_updates="https://a.org/TripUpdate.pbb"),
+    ]
+    rows = [replace(r, feed_references=("mdb-1",)) for r in rows]
+    results = {
+        "https://a.org/g.zip": ok("https://a.org/g.zip"),
+        "https://a.org/TripUpdate.pb": ok("https://a.org/TripUpdate.pb"),
+        "https://a.org/TripUpdate.pbb": failed("https://a.org/TripUpdate.pbb"),
+    }
+    (feed,) = build_feeds(rows, results, {})
+    assert feed.state == UP
+
+    del results["https://a.org/TripUpdate.pb"]
+    results["https://a.org/TripUpdate.pb"] = failed("https://a.org/TripUpdate.pb")
+    (feed,) = build_feeds(rows, results, {})
+    assert feed.state == PARTIAL
 
 
 def test_ids_are_minted_deterministically_and_reused_by_overlap():

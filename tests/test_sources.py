@@ -38,7 +38,7 @@ def test_normalize_url_folds_case_default_ports_and_query_order():
         "https://example.org/feed.zip"
     )
     # http and https stay distinct: a plain-http endpoint is a different thing
-    # to fetch, and several curated entries exist only in that form.
+    # to fetch, and some feeds exist only in that form.
     assert normalize_url("http://example.org/f") != normalize_url(
         "https://example.org/f"
     )

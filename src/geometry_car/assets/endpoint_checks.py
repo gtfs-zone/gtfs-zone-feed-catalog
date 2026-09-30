@@ -227,8 +227,7 @@ def check_targets(rows: list[Source]) -> tuple[dict[str, str], dict[str, CheckRe
                 continue
             key = normalize_url(url)
             if not key:
-                # Path-only curated realtime URLs; they resolve against each
-                # app's own RT base and there is no one host to check.
+                # A path-only URL: there is no one host to check.
                 relative.setdefault(url, url)
                 continue
             if row.authentication_type:
