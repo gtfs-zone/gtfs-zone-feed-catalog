@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Placeholder S3 credentials in .env.example"
+condition = "AND"
+paths = ['''(^|/)\.env\.example$''']
+regexes = ['''^GK0123456789abcdef01234567$''', '''^(0123456789abcdef){4}$''']
