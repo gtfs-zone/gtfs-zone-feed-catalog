@@ -1,3 +1,9 @@
+## v0.3.0 (2026-10-02)
+
+### Feat
+
+- ingest the FTA NTD GTFS weblinks as a catalog
+
 ## v0.2.2 (2026-10-02)
 
 ## v0.2.1 (2026-10-01)
