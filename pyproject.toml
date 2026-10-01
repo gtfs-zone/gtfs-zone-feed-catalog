@@ -23,7 +23,6 @@ gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.
 dev = [
     "commitizen",
     "moto[s3]>=5.0",
-    "pre-commit",
     "pytest>=8.0",
     "respx>=0.21",
     "ruff",
