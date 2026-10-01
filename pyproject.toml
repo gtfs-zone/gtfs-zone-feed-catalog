@@ -3,6 +3,7 @@ name = "gtfs-zone-feed-catalog"
 version = "0.2.0"
 requires-python = ">=3.13"
 description = "Dagster pipeline that inventories the world of GTFS feeds and publishes the catalog"
+license = "AGPL-3.0-or-later"
 dependencies = [
     "dagster>=1.9",
     "dagster-webserver>=1.9",
