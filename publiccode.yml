@@ -1,0 +1,46 @@
+publiccodeYmlVersion: "0.4"
+
+name: GTFS.zone Feed Catalog
+url: "https://github.com/gtfs-zone/gtfs-zone-feed-catalog"
+landingURL: "https://data.gtfs.zone"
+
+platforms:
+  - linux
+
+categories:
+  - data-collection
+  - data-analytics
+
+developmentStatus: beta
+
+softwareType: "standalone/backend"
+
+description:
+  en:
+    shortDescription: >
+      A Dagster pipeline that inventories public GTFS feeds and checks whether each one still answers.
+    longDescription: >
+      GTFS.zone Feed Catalog ingests the Transitland Atlas and the Mobility
+      Database every day, checks whether each feed endpoint still answers,
+      keeps the history in PostgreSQL, and publishes public JSON artifacts to
+      data.gtfs.zone: the sources, the logical feeds, their status, a search
+      index and a manifest consumers poll. No feed bodies are downloaded or
+      stored. It also hosts the Dagster instance the timetable sites run in.
+    features:
+      - Daily ingest of the Transitland Atlas and the Mobility Database
+      - Reachability checks for every feed endpoint
+      - Public JSON artifacts with dated snapshots
+
+legal:
+  license: AGPL-3.0-or-later
+
+maintenance:
+  type: community
+  contacts:
+    - name: Max Katz-Christy
+      email: maxkatzchristy@gmail.com
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - en
