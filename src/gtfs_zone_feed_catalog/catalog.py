@@ -13,8 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from gtfs_zone_feed_catalog.urls import is_absolute
-
 Kind = Literal["static", "rt"]
 
 # Which URL roles belong to which kind. A static row carries exactly one URL; an
@@ -84,16 +82,6 @@ class Source:
     @property
     def roles(self) -> tuple[str, ...]:
         return STATIC_ROLES if self.kind == "static" else RT_ROLES
-
-    @property
-    def check_urls(self) -> tuple[str, ...]:
-        """Absolute URLs worth checking, in role order.
-
-        A path-only URL is excluded: there is no one host to check it against.
-        """
-        return tuple(
-            url for role in self.roles if is_absolute(url := self.urls.get(role, ""))
-        )
 
     def with_place(self, place: Place) -> Source:
         return replace(self, place=place)

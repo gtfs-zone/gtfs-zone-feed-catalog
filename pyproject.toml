@@ -14,6 +14,8 @@ dependencies = [
     "alembic>=1.14",
     "psycopg2-binary>=2.9",
     "gtfs-zone-db-models",
+    "boto3>=1.35",
+    "botocore>=1.35",
 ]
 
 [tool.uv.sources]
@@ -22,10 +24,12 @@ gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.
 [dependency-groups]
 dev = [
     "commitizen",
+    "deptry>=0.25.1",
     "moto[s3]>=5.0",
     "pytest>=8.0",
     "respx>=0.21",
     "ruff",
+    "vulture>=2.16",
 ]
 
 [build-system]
@@ -51,6 +55,21 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "TC", "RUF"]
 "src/gtfs_zone_feed_catalog/assets/*.py" = ["TC001"]
 # Alembic calls include_object with a fixed positional signature of its own.
 "src/gtfs_zone_feed_catalog/alembic/env.py" = ["ANN001"]
+
+[tool.vulture]
+paths = ["src"]
+# ORM columns and Alembic revisions are read by SQLAlchemy and Alembic
+exclude = ["*/history/models.py", "*/alembic/versions/*"]
+# Used only through a framework: routes, validators, tasks, ORM fields
+ignore_decorators = ["@app.*", "@router.*", "@field_validator", "@model_validator", "@asset"]
+ignore_names = ["cls", "model_config", "defs", "last_checked", "download_url"]
+
+[tool.deptry]
+per_rule_ignores.DEP002 = [
+    "dagster-webserver",  # serves the UI, run by the infra deployment
+    "dagster-postgres",  # run storage, named in the infra dagster.yaml
+    "psycopg2-binary",  # SQLAlchemy driver, loaded from the database URL
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
