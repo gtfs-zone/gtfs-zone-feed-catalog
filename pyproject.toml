@@ -1,6 +1,6 @@
 [project]
 name = "gtfs-zone-feed-catalog"
-version = "0.2.1"
+version = "0.2.2"
 requires-python = ">=3.13"
 description = "Dagster pipeline that inventories the world of GTFS feeds and publishes the catalog"
 license = "AGPL-3.0-or-later"
