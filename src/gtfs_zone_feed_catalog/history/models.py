@@ -172,9 +172,9 @@ class EndpointState(Base):
 
 
 class EndpointContent(Base):
-    """What a URL's download last held, as cape-flier's content report says.
+    """What a URL's download last held, as timetable-sites's content report says.
 
-    Only URLs cape-flier builds a site from have one. ``facts`` is the report's
+    Only URLs timetable-sites builds a site from have one. ``facts`` is the report's
     feed_info, service range, agencies and counts, set when the outcome is ok.
     """
 

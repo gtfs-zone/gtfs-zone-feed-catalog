@@ -1,4 +1,4 @@
-from geometry_car.settings import Settings
+from gtfs_zone_feed_catalog.settings import Settings
 
 
 def test_defaults_are_polite():

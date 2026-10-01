@@ -1,4 +1,4 @@
-"""cape-flier's content report: fetched, recorded per URL, published per feed."""
+"""timetable-sites's content report: fetched, recorded per URL, published per feed."""
 
 import json
 import re
@@ -8,18 +8,18 @@ import httpx
 import respx
 from sqlalchemy import select
 
-from geometry_car import artifacts, pages
-from geometry_car.assets import feed_contents as module
-from geometry_car.assets.feed_contents import (
+from gtfs_zone_feed_catalog import artifacts, pages
+from gtfs_zone_feed_catalog.assets import feed_contents as module
+from gtfs_zone_feed_catalog.assets.feed_contents import (
     FeedContent,
     fetch_report,
     parse_entry,
     record,
 )
-from geometry_car.assets.feeds import build_feeds
-from geometry_car.catalog import Place, Source
-from geometry_car.history.models import EndpointContentState, EndpointRecord
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.assets.feeds import build_feeds
+from gtfs_zone_feed_catalog.catalog import Place, Source
+from gtfs_zone_feed_catalog.history.models import EndpointContentState, EndpointRecord
+from gtfs_zone_feed_catalog.settings import settings
 
 BASE = "https://sites.example/"
 NOW = datetime(2026, 9, 30, 9, 0, tzinfo=UTC)

@@ -1,6 +1,6 @@
 """The DMFR parse, and specifically the thing a per-file index gets wrong."""
 
-from geometry_car.assets.transitland_atlas import (
+from gtfs_zone_feed_catalog.assets.transitland_atlas import (
     build_operator_index,
     build_sources,
     humanize_feed_id,

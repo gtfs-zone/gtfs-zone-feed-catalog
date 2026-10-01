@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from alembic import op
 
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 revision: str = "b4e81d2f6a07"
 down_revision: str | Sequence[str] | None = "7c2e5a1d9b30"

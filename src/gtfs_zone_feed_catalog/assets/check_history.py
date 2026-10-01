@@ -24,18 +24,18 @@ from datetime import UTC, datetime
 from dagster import asset
 from sqlalchemy import delete, func, insert, select
 
-from geometry_car.assets.endpoint_checks import CheckResult, result_key
-from geometry_car.catalog import Source
-from geometry_car.database import get_session_factory
-from geometry_car.history.models import (
+from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult, result_key
+from gtfs_zone_feed_catalog.catalog import Source
+from gtfs_zone_feed_catalog.database import get_session_factory
+from gtfs_zone_feed_catalog.history.models import (
     CheckRun,
     EndpointRecord,
     EndpointState,
     SourceEndpoint,
     SourceRecord,
 )
-from geometry_car.settings import settings
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 log = logging.getLogger(__name__)
 

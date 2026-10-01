@@ -1,6 +1,6 @@
 """Alembic, synchronously, against this repo's tables only.
 
-Synchronous where railroad-club's env.py is async, because this repo's engine is
+Synchronous where gtfs-zone-db-models's env.py is async, because this repo's engine is
 psycopg2 and a migration has no reason to be either.
 
 ``include_object`` is the load-bearing part: Dagster owns its own run, event-log
@@ -21,8 +21,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from geometry_car.database import sync_url
-from geometry_car.history.models import Base
+from gtfs_zone_feed_catalog.database import sync_url
+from gtfs_zone_feed_catalog.history.models import Base
 
 config = context.config
 if config.config_file_name is not None:
@@ -32,7 +32,7 @@ target_metadata = Base.metadata
 
 OUR_TABLES = set(target_metadata.tables)
 
-VERSION_TABLE = "alembic_version_geometry_car"
+VERSION_TABLE = "alembic_version_feed_catalog"
 
 
 def include_object(_object, name, type_, _reflected, _compare_to) -> bool:

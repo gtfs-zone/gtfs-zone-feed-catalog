@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.settings import settings
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine

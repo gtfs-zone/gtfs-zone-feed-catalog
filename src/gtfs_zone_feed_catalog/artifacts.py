@@ -25,13 +25,13 @@ from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from geometry_car.catalog import ATLAS_URL_KEYS, Place, Source
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 if TYPE_CHECKING:
-    from geometry_car.assets.check_history import SourceStatus
-    from geometry_car.assets.feed_contents import FeedContent
-    from geometry_car.assets.feeds import Feed
+    from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+    from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+    from gtfs_zone_feed_catalog.assets.feeds import Feed
 
 ARTIFACT_CONTENT_TYPE = "application/json"
 SNAPSHOT_CONTENT_TYPE = "application/gzip"
@@ -95,7 +95,7 @@ def place_fields(place: Place) -> dict[str, Any]:
 
 
 def catalog_url(row: Source) -> str | None:
-    """Mirrors globe-of-contents' labels.ts catalogUrl."""
+    """Mirrors feed-list's labels.ts catalogUrl."""
     if row.catalog == "transitland":
         return f"{TRANSITLAND_FEED_BASE}{row.feed_id}"
     if row.catalog == "mobilitydatabase":
@@ -409,7 +409,7 @@ def summary_document(
                 "realtime": sum(1 for feed in feeds if set(feed.urls) - {"scheduled"}),
                 "placed": feeds_placed,
                 "unplaced": len(feeds) - feeds_placed,
-                # Only feeds cape-flier builds a site from have a content state.
+                # Only feeds timetable-sites builds a site from have a content state.
                 "by_content": dict(by_content),
             },
         }

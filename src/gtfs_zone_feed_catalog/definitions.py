@@ -1,6 +1,6 @@
 """Dagster entrypoint. The code server and ``dagster dev`` both load this module.
 
-Assets are collected by walking ``geometry_car.assets``, so adding an asset is
+Assets are collected by walking ``gtfs_zone_feed_catalog.assets``, so adding an asset is
 adding a module. One job over all of them, on one daily schedule: there is no
 sensor, because the UI's re-execute button is the retry mechanism and a catalog
 that is late by an hour is not worth a second trigger path.
@@ -19,7 +19,7 @@ from dagster import (
     load_assets_from_package_module,
 )
 
-from geometry_car import assets
+from gtfs_zone_feed_catalog import assets
 
 ALL_ASSETS = load_assets_from_package_module(assets)
 

@@ -1,4 +1,4 @@
-# Geometry Car
+# gtfs-zone-feed-catalog
 
 Dagster pipeline that inventories the world of GTFS. It ingests the Transitland
 Atlas DMFR corpus and the Mobility Database daily, checks whether each feed
@@ -15,7 +15,7 @@ poll to decide whether to refetch, plus deduplicated dated snapshots.
 Reachability is checked with a HEAD request, falling back to a ranged GET when
 the origin rejects HEAD. No feed bodies are downloaded or stored.
 
-`globe-of-contents` (`list.gtfs.zone`) is the frontend for these artifacts.
+`feed-list` (`list.gtfs.zone`) is the frontend for these artifacts.
 
 ## Running Locally
 
@@ -31,7 +31,7 @@ corpus from disk rather than the GitHub API.
 
 Without `DATABASE_URL` the run still works and still publishes; it just keeps no
 history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland and
-cafe-car's catalog alone. Neither is an error, so a first local run needs neither.
+rt-api's catalog alone. Neither is an error, so a first local run needs neither.
 
 Trigger the first run from the Dagster UI rather than waiting for the schedule.
 
@@ -41,7 +41,7 @@ The history tables are this repo's, with this repo's Alembic. Dagster's own run
 and event storage lives in the same database and creates itself, and `env.py`
 filters autogenerate down to this repo's tables so a revision here cannot
 propose dropping any of Dagster's. Dagster migrates itself with Alembic too, so
-this repo's revision is recorded in `alembic_version_geometry_car` rather than
+this repo's revision is recorded in `alembic_version_gtfs_zone_feed_catalog` rather than
 the default `alembic_version`, which is Dagster's.
 
 ```bash

@@ -1,4 +1,4 @@
-# Geometry Car: Claude Guide
+# gtfs-zone-feed-catalog: Claude Guide
 
 ## Project Overview
 
@@ -8,9 +8,9 @@ endpoint is reachable, keeps history in Postgres, and publishes public JSON
 artifacts to a Garage bucket served at `data.gtfs.zone`.
 
 The artifacts replace the build-time `public/atlas-feeds.json` that
-`coloring-book` and `test-track` each shipped their own stale copy of, and the
-hand-curated `EXAMPLES` list that used to live in `interlocking`; the feeds
-rt.gtfs.zone serves come from cafe-car's own catalog.
+`gtfs-zone-editor` and `rt-viewer` each shipped their own stale copy of, and the
+hand-curated `EXAMPLES` list that used to live in `gtfs-zone-web-common`; the feeds
+rt.gtfs.zone serves come from rt-api's own catalog.
 
 ## Commands
 
@@ -26,18 +26,18 @@ pre-commit install   # install git hooks
 
 ## Architecture
 
-Assets live one per module under `src/geometry_car/assets/`, in dependency
+Assets live one per module under `src/gtfs_zone_feed_catalog/assets/`, in dependency
 order:
 
 | Asset | What it does |
 |---|---|
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
-| `cafe_car` | The feeds rt.gtfs.zone serves, from cafe-car's public `GET /feeds` (`CAFE_CAR_CATALOG_URL`) |
+| `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
-| `feed_contents` | Read cape-flier's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
+| `feed_contents` | Read timetable-sites's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
 | `history_retention` | Delete old `endpoint_state` and `endpoint_content_state` rows, and absent sources, endpoints and feeds, past their window |
 | `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
@@ -47,7 +47,7 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds cape-flier builds), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds timetable-sites builds), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since); also what a snapshot hashes |
 | `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, state, `roleState`, URLs, auth, size, date. What every app's picker and list.gtfs.zone's first paint fetch |
@@ -121,12 +121,12 @@ unplaced count is published and shown, not hidden.
 | `SOURCE_ABSENT_RETENTION_DAYS` | Days absent before a `source`, `endpoint` or `feed` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
-| `CONTENT_REPORT_BASE` | Where cape-flier's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
-| `CAFE_CAR_CATALOG_URL` | cafe-car's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
+| `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
+| `RT_API_CATALOG_URL` | rt-api's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |
-| `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `railroad_club.object_store`, not by this repo's `Settings` |
+| `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `gtfs_zone_db_models.object_store`, not by this repo's `Settings` |
 
 ## Rules
 
@@ -150,7 +150,7 @@ unplaced count is published and shown, not hidden.
   type an asset signature names must be imported at runtime, never under
   `TYPE_CHECKING`, and the module must not use `from __future__ import
   annotations` if it annotates `context`. Both failures are import-time, loud.
-- `geometry_car/assets/__init__.py` stays empty of imports on purpose:
+- `gtfs_zone_feed_catalog/assets/__init__.py` stays empty of imports on purpose:
   re-exporting the asset objects shadows the submodule names, and then anything
   addressing a module by its dotted path gets the asset instead.
 - Both catalogs list many of the same feeds. Catalog rows are cross-linked by
@@ -165,9 +165,9 @@ unplaced count is published and shown, not hidden.
 
 | Repo | Description | URL |
 |---|---|---|
-| globe-of-contents | Frontend for these artifacts at list.gtfs.zone | https://git.kcfam.us/gtfs.zone/globe-of-contents |
-| railroad-club | Shared Python library, including the object-store client | https://git.kcfam.us/gtfs.zone/railroad-club |
-| interlocking | Shared frontend library; consumes the published catalog | https://git.kcfam.us/gtfs.zone/interlocking |
-| cafe-car | GTFS-RT HTTP API serving real-time feeds | https://git.kcfam.us/gtfs.zone/cafe-car |
-| schedule-foamer | Worker that ingests and processes GTFS schedule data | https://git.kcfam.us/gtfs.zone/schedule-foamer |
-| deploy-gtfs-rt | ArgoCD-managed k3s deployment | https://git.kcfam.us/gtfs.zone/deploy-gtfs-rt |
+| feed-list | Frontend for these artifacts at list.gtfs.zone | https://github.com/gtfs-zone/gtfs-zone-feed-list |
+| gtfs-zone-db-models | Shared Python library, including the object-store client | https://github.com/gtfs-zone/gtfs-zone-db-models |
+| gtfs-zone-web-common | Shared frontend library; consumes the published catalog | https://github.com/gtfs-zone/gtfs-zone-web-common |
+| rt-api | GTFS-RT HTTP API serving real-time feeds | https://github.com/gtfs-zone/gtfs-zone-rt-api |
+| static-importer | Worker that ingests and processes GTFS schedule data | https://github.com/gtfs-zone/gtfs-zone-static-importer |
+| gtfs-zone-infra | ArgoCD-managed k3s deployment | https://github.com/gtfs-zone/gtfs-zone-infra |

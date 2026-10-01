@@ -22,17 +22,17 @@ from datetime import UTC, datetime, timedelta
 from dagster import asset
 from sqlalchemy import delete
 
-from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.feeds import Feed
-from geometry_car.database import get_session_factory
-from geometry_car.history.models import (
+from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+from gtfs_zone_feed_catalog.assets.feeds import Feed
+from gtfs_zone_feed_catalog.database import get_session_factory
+from gtfs_zone_feed_catalog.history.models import (
     EndpointContentState,
     EndpointRecord,
     EndpointState,
     FeedRecord,
     SourceRecord,
 )
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.settings import settings
 
 log = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from geometry_car.history.models import (
+from gtfs_zone_feed_catalog.history.models import (
     Base,
     CheckRun,
     EndpointRecord,

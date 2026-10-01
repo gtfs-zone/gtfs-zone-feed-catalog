@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # extra="ignore": the .env also carries the S3_* keys railroad-club's
+    # extra="ignore": the .env also carries the S3_* keys gtfs-zone-db-models's
     # ObjectStoreSettings reads, which are not this model's to declare.
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     mobility_db_refresh_token: str = ""
     mobility_db_base_url: str = "https://api.mobilitydatabase.org/v1"
 
-    # cafe-car's public feed catalog: the feeds rt.gtfs.zone serves itself.
+    # rt-api's public feed catalog: the feeds rt.gtfs.zone serves itself.
     # Empty skips it.
-    cafe_car_catalog_url: str = "https://rt.gtfs.zone/feeds"
+    rt_api_catalog_url: str = "https://rt.gtfs.zone/feeds"
 
     # Endpoint checking. Ten thousand outbound requests from one home IP is a
     # monitor only if it stays polite: a global cap, one request at a time per
@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     # Named so an origin operator who sees us in their logs can find out who we
     # are and how to complain.
     check_user_agent: str = (
-        "geometry-car/0.1 (+https://list.gtfs.zone; GTFS catalog reachability check)"
+        "gtfs-zone-feed-catalog/0.1"
+        " (+https://list.gtfs.zone; GTFS catalog reachability check)"
     )
 
     # Retention. Both are load-bearing: one 40Gi Garage volume holds every
@@ -49,7 +50,7 @@ class Settings(BaseSettings):
     snapshot_daily_days: int = 30
     snapshot_weekly_days: int = 365
 
-    # Where cape-flier publishes its content report (`_content/index.json` and
+    # Where timetable-sites publishes its content report (`_content/index.json` and
     # one file per shard): what each schedule's download held. Empty skips it.
     content_report_base: str = "https://sites.gtfs.zone/"
 
@@ -61,7 +62,7 @@ class Settings(BaseSettings):
     gatus_token: str = ""
 
     # The object store the published artifacts are written to is configured by
-    # railroad_club.object_store.ObjectStoreSettings, off the same .env:
+    # gtfs_zone_db_models.object_store.ObjectStoreSettings, off the same .env:
     # S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION. Not
     # mirrored here, so nothing can point the writer and the reader at
     # different buckets by accident.

@@ -21,8 +21,8 @@ from collections import defaultdict
 
 from dagster import asset
 
-from geometry_car.catalog import Source
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.catalog import Source
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 log = logging.getLogger(__name__)
 
@@ -75,9 +75,9 @@ def merge(*groups: list[Source]) -> list[Source]:
 def sources(
     transitland_atlas: list[Source],
     mobility_database: list[Source],
-    cafe_car: list[Source],
+    rt_api: list[Source],
 ) -> list[Source]:
-    rows = cross_link(merge(transitland_atlas, mobility_database, cafe_car))
+    rows = cross_link(merge(transitland_atlas, mobility_database, rt_api))
 
     placed = sum(1 for row in rows if row.place.placed)
     cross_linked = sum(1 for row in rows if row.same_endpoint_as)

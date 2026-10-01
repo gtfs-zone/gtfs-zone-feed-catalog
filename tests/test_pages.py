@@ -4,11 +4,11 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 
-from geometry_car import pages
-from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.feeds import build_feeds
-from geometry_car.assets.published_artifacts import publish_pages
-from geometry_car.catalog import Place, Source
+from gtfs_zone_feed_catalog import pages
+from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+from gtfs_zone_feed_catalog.assets.feeds import build_feeds
+from gtfs_zone_feed_catalog.assets.published_artifacts import publish_pages
+from gtfs_zone_feed_catalog.catalog import Place, Source
 
 NOW = datetime(2026, 9, 20, 6, 0, tzinfo=UTC)
 

@@ -32,9 +32,9 @@ from itertools import islice, zip_longest
 import httpx
 from dagster import Config, asset
 
-from geometry_car.catalog import STATIC_ROLES, Source
-from geometry_car.settings import settings
-from geometry_car.urls import host_of, normalize_url
+from gtfs_zone_feed_catalog.catalog import STATIC_ROLES, Source
+from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.urls import host_of, normalize_url
 
 
 def result_key(url: str) -> str:

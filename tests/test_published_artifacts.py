@@ -5,14 +5,14 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from railroad_club.object_store import ObjectNotFound, ObjectStoreSettings
+from gtfs_zone_db_models.object_store import ObjectNotFound, ObjectStoreSettings
 
-from geometry_car import artifacts
-from geometry_car.assets.bucket_cors import ALLOWED_ORIGINS, set_cors
-from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.feeds import build_feeds
-from geometry_car.assets.published_artifacts import publish
-from geometry_car.catalog import Source
+from gtfs_zone_feed_catalog import artifacts
+from gtfs_zone_feed_catalog.assets.bucket_cors import ALLOWED_ORIGINS, set_cors
+from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+from gtfs_zone_feed_catalog.assets.feeds import build_feeds
+from gtfs_zone_feed_catalog.assets.published_artifacts import publish
+from gtfs_zone_feed_catalog.catalog import Source
 from tests.conftest import BUCKET, ENDPOINT
 
 DAY_ONE = datetime(2026, 9, 20, 6, 0, tzinfo=UTC)
@@ -90,7 +90,7 @@ def test_a_changed_answer_writes_the_next_snapshot(store):
 
 
 def test_snapshot_retention_deletes_the_objects_it_drops(store, monkeypatch):
-    from geometry_car.settings import settings
+    from gtfs_zone_feed_catalog.settings import settings
 
     # A one-day daily window and a one-day weekly window, so the second run's
     # retention pass has to thin the first run's snapshot away.

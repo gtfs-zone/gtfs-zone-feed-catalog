@@ -1,5 +1,5 @@
 [project]
-name = "geometry-car"
+name = "gtfs-zone-feed-catalog"
 version = "0.1.0"
 requires-python = ">=3.13"
 description = "Dagster pipeline that inventories the world of GTFS feeds and publishes the catalog"
@@ -12,11 +12,11 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.14",
     "psycopg2-binary>=2.9",
-    "railroad-club",
+    "gtfs-zone-db-models",
 ]
 
 [tool.uv.sources]
-railroad-club = { git = "https://github.com/gtfs-zone/railroad-club.git" }
+gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git", tag = "v0.2.0" }
 
 [dependency-groups]
 dev = [
@@ -33,7 +33,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/geometry_car"]
+packages = ["src/gtfs_zone_feed_catalog"]
 
 [tool.ruff]
 target-version = "py313"
@@ -48,9 +48,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "TC", "RUF"]
 # Dagster resolves an asset's upstream dependencies from its parameter
 # annotations at import time, so a name only imported under TYPE_CHECKING is a
 # NameError when the code server loads the module, not a saved import.
-"src/geometry_car/assets/*.py" = ["TC001"]
+"src/gtfs_zone_feed_catalog/assets/*.py" = ["TC001"]
 # Alembic calls include_object with a fixed positional signature of its own.
-"src/geometry_car/alembic/env.py" = ["ANN001"]
+"src/gtfs_zone_feed_catalog/alembic/env.py" = ["ANN001"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

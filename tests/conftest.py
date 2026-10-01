@@ -9,18 +9,18 @@ from __future__ import annotations
 
 import boto3
 import pytest
+from gtfs_zone_db_models.object_store import ObjectStore, ObjectStoreSettings
 from moto import mock_aws
-from railroad_club.object_store import ObjectStore, ObjectStoreSettings
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from geometry_car.assets import check_history as check_history_module
-from geometry_car.assets import feed_contents as feed_contents_module
-from geometry_car.assets import feeds as feeds_module
-from geometry_car.assets import history_retention as retention_module
-from geometry_car.history.models import Base
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.assets import check_history as check_history_module
+from gtfs_zone_feed_catalog.assets import feed_contents as feed_contents_module
+from gtfs_zone_feed_catalog.assets import feeds as feeds_module
+from gtfs_zone_feed_catalog.assets import history_retention as retention_module
+from gtfs_zone_feed_catalog.history.models import Base
+from gtfs_zone_feed_catalog.settings import settings
 
 BUCKET = "test-artifacts"
 # Deliberately not an AWS hostname: the store points at Garage, and moto only

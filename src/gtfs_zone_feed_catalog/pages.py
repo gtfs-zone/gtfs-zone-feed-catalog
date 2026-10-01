@@ -19,14 +19,14 @@ from html import escape
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
-from geometry_car.artifacts import catalog_url, feed_content, feed_since
-from geometry_car.catalog import RT_ROLES, STATIC_ROLES
+from gtfs_zone_feed_catalog.artifacts import catalog_url, feed_content, feed_since
+from gtfs_zone_feed_catalog.catalog import RT_ROLES, STATIC_ROLES
 
 if TYPE_CHECKING:
-    from geometry_car.assets.check_history import SourceStatus
-    from geometry_car.assets.feed_contents import FeedContent
-    from geometry_car.assets.feeds import Feed
-    from geometry_car.catalog import Source
+    from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+    from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+    from gtfs_zone_feed_catalog.assets.feeds import Feed
+    from gtfs_zone_feed_catalog.catalog import Source
 
 SITE_BASE = "https://list.gtfs.zone"
 EDITOR_BASE = "https://edit.gtfs.zone"
@@ -147,7 +147,7 @@ def description(feed: Feed, rows: list[Source], since: datetime | None) -> str:
 
 
 def editor_url(feed: Feed) -> str | None:
-    """Mirrors globe-of-contents' app-links.ts."""
+    """Mirrors feed-list's app-links.ts."""
     scheduled = next(iter(feed.urls.get("scheduled", ())), None)
     if not scheduled or not _absolute(scheduled):
         return None
@@ -155,7 +155,7 @@ def editor_url(feed: Feed) -> str | None:
 
 
 def viewer_url(feed: Feed) -> str | None:
-    """Mirrors globe-of-contents' app-links.ts."""
+    """Mirrors feed-list's app-links.ts."""
     scheduled = next(iter(feed.urls.get("scheduled", ())), None)
     if not scheduled or not _has_realtime(feed):
         return None

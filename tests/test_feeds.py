@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from geometry_car.assets.check_history import DOWN, UNKNOWN, UP, fold, record
-from geometry_car.assets.endpoint_checks import CheckResult
-from geometry_car.assets.feed_contents import FeedContent
-from geometry_car.assets.feeds import (
+from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP, fold, record
+from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
+from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+from gtfs_zone_feed_catalog.assets.feeds import (
     PARTIAL,
     assign_ids,
     build_feeds,
@@ -17,9 +17,9 @@ from geometry_car.assets.feeds import (
     load_existing,
     persist,
 )
-from geometry_car.catalog import Place, Source
-from geometry_car.history.models import FeedMember, FeedRecord
-from geometry_car.urls import rt_sibling_key
+from gtfs_zone_feed_catalog.catalog import Place, Source
+from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord
+from gtfs_zone_feed_catalog.urls import rt_sibling_key
 
 NOW = datetime(2026, 9, 1, tzinfo=UTC)
 

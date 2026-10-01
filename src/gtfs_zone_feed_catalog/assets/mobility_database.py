@@ -28,8 +28,8 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from dagster import asset
 
-from geometry_car.catalog import Place, Source, make_rows
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.catalog import Place, Source, make_rows
+from gtfs_zone_feed_catalog.settings import settings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -231,7 +231,7 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
 def mobility_database() -> list[Source]:
     if not settings.mobility_db_refresh_token:
         # Not a failure: a developer without the token still gets a usable run
-        # off Transitland and cafe-car.
+        # off Transitland and rt-api.
         log.warning("MOBILITY_DB_REFRESH_TOKEN is unset; skipping the catalog")
         return []
 

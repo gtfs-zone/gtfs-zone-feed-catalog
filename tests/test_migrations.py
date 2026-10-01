@@ -19,7 +19,9 @@ def alembic(tmp_path, monkeypatch):
     url = f"sqlite:///{tmp_path / 'history.db'}"
     monkeypatch.setenv("DATABASE_URL", url)
     config = Config(str(ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(ROOT / "src/geometry_car/alembic"))
+    config.set_main_option(
+        "script_location", str(ROOT / "src/gtfs_zone_feed_catalog/alembic")
+    )
     return config, create_engine(url)
 
 

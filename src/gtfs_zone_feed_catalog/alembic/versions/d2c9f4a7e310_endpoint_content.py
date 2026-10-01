@@ -1,6 +1,6 @@
 """endpoint content
 
-What each URL's download held, from cape-flier's content report, plus one row
+What each URL's download held, from timetable-sites's content report, plus one row
 per change of that outcome.
 
 Revision ID: d2c9f4a7e310

@@ -1,6 +1,6 @@
 """Transitland Atlas: the DMFR corpus, one row per source kind.
 
-Ported from ``interlocking/scripts/generate-atlas-data.ts``, including the part
+Ported from ``gtfs-zone-web-common/scripts/generate-atlas-data.ts``, including the part
 that is easy to get wrong. The operator index is built in two passes over the
 *whole* corpus, because a feed almost never declares ``operators[]`` - the link
 runs the other way, from ``operator.associated_feeds[].feed_onestop_id`` back
@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 import httpx
 from dagster import asset
 
-from geometry_car.catalog import Source, make_rows
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.catalog import Source, make_rows
+from gtfs_zone_feed_catalog.settings import settings
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

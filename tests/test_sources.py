@@ -1,8 +1,8 @@
 """Normalization, cross-linking and the coordinates that travel along a link."""
 
-from geometry_car.assets.sources import cross_link, merge
-from geometry_car.catalog import Place, Source
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.assets.sources import cross_link, merge
+from gtfs_zone_feed_catalog.catalog import Place, Source
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 PLACE = Place(country_code="US", latitude=34.0, longitude=-118.0)
 

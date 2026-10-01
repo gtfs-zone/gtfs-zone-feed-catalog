@@ -40,4 +40,4 @@ RUN mkdir -p /app/dagster_home && chown bridge:bridge /app/dagster_home
 
 USER bridge
 
-CMD ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4000", "-m", "geometry_car.definitions"]
+CMD ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4000", "-m", "gtfs_zone_feed_catalog.definitions"]

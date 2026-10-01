@@ -31,14 +31,14 @@ from datetime import UTC, datetime
 from dagster import asset
 from sqlalchemy import delete, insert, select, update
 
-from geometry_car.assets.check_history import DOWN, UNKNOWN, UP
-from geometry_car.assets.endpoint_checks import CheckResult, result_key
-from geometry_car.assets.feed_contents import FeedContent
-from geometry_car.catalog import RT_ROLES, Place, Source
-from geometry_car.database import get_session_factory
-from geometry_car.history.models import FeedMember, FeedRecord, SourceRecord
-from geometry_car.settings import settings
-from geometry_car.urls import normalize_url, rt_sibling_key
+from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP
+from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult, result_key
+from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+from gtfs_zone_feed_catalog.catalog import RT_ROLES, Place, Source
+from gtfs_zone_feed_catalog.database import get_session_factory
+from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord, SourceRecord
+from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.urls import normalize_url, rt_sibling_key
 
 log = logging.getLogger(__name__)
 

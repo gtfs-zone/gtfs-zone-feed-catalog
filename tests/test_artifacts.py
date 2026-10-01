@@ -4,11 +4,11 @@ import gzip
 import json
 from datetime import UTC, date, datetime
 
-from geometry_car import artifacts
-from geometry_car.assets.check_history import SourceStatus
-from geometry_car.assets.endpoint_checks import CheckResult
-from geometry_car.assets.feeds import build_feeds
-from geometry_car.catalog import Place, Source
+from gtfs_zone_feed_catalog import artifacts
+from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
+from gtfs_zone_feed_catalog.assets.feeds import build_feeds
+from gtfs_zone_feed_catalog.catalog import Place, Source
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
 

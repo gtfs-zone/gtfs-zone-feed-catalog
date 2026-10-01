@@ -1,6 +1,6 @@
-"""What each schedule's download actually held, from cape-flier's content report.
+"""What each schedule's download actually held, from timetable-sites's content report.
 
-HEAD says a URL answers; it cannot say the body is a GTFS zip. cape-flier
+HEAD says a URL answers; it cannot say the body is a GTFS zip. timetable-sites
 downloads and parses every schedule it builds a site from, and publishes per
 shard the outcome of its last download (`ok`, `not_zip`, `missing_files`, ...)
 and, when ok, the zip's feed_info, service range, agencies and counts, listed
@@ -8,7 +8,7 @@ in ``_content/index.json`` at ``settings.content_report_base``.
 
 The report is read over HTTPS like any consumer would, keyed by normalized URL
 and recorded against the URL's endpoint, with one ``endpoint_content_state``
-row per outcome change. cape-flier runs after this pipeline, so what is read
+row per outcome change. timetable-sites runs after this pipeline, so what is read
 is the previous day's report. A report that cannot be fetched leaves the last
 recorded contents in place rather than failing the run.
 """
@@ -22,15 +22,15 @@ import httpx
 from dagster import asset
 from sqlalchemy import select
 
-from geometry_car.assets.check_history import SourceStatus
-from geometry_car.database import get_session_factory
-from geometry_car.history.models import (
+from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
+from gtfs_zone_feed_catalog.database import get_session_factory
+from gtfs_zone_feed_catalog.history.models import (
     EndpointContent,
     EndpointContentState,
     EndpointRecord,
 )
-from geometry_car.settings import settings
-from geometry_car.urls import normalize_url
+from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.urls import normalize_url
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ ENTRY_KEYS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class FeedContent:
-    """One URL's last download, as cape-flier reported it."""
+    """One URL's last download, as timetable-sites reported it."""
 
     url: str
     outcome: str
@@ -159,7 +159,9 @@ def recorded() -> dict[str, FeedContent]:
         return {row.url: _from_record(row) for row in rows}
 
 
-@asset(description="Each schedule's last download outcome and facts, from cape-flier")
+@asset(
+    description="Each schedule's last download outcome and facts, from timetable-sites"
+)
 def feed_contents(
     check_history: dict[str, SourceStatus],
 ) -> dict[str, FeedContent]:

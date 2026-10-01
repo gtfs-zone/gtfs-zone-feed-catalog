@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import httpx
 import respx
 
-from geometry_car.assets.endpoint_checks import (
+from gtfs_zone_feed_catalog.assets.endpoint_checks import (
     CheckResult,
     check_targets,
     drop_realtime_sizes,
@@ -16,8 +16,8 @@ from geometry_car.assets.endpoint_checks import (
     sample_targets,
     static_keys,
 )
-from geometry_car.catalog import Source
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.catalog import Source
+from gtfs_zone_feed_catalog.settings import settings
 
 NOW = datetime(2026, 9, 1, tzinfo=UTC)
 

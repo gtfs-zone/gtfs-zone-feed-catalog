@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from geometry_car.assets.mobility_database import (
+from gtfs_zone_feed_catalog.assets.mobility_database import (
     MobilityDatabaseError,
     build_realtime_sources,
     build_static_sources,
@@ -12,7 +12,7 @@ from geometry_car.assets.mobility_database import (
     iter_feeds,
     place_of,
 )
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.settings import settings
 
 BASE = settings.mobility_db_base_url
 

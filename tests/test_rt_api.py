@@ -1,6 +1,6 @@
-"""cafe-car's public catalog as source rows."""
+"""rt-api's public catalog as source rows."""
 
-from geometry_car.assets.cafe_car import build_sources
+from gtfs_zone_feed_catalog.assets.rt_api import build_sources
 
 AMTRAK = {
     "feed_name": "amtrak",
@@ -12,7 +12,7 @@ AMTRAK = {
 }
 
 
-def test_a_cafe_car_feed_is_a_static_and_an_rt_row():
+def test_an_rt_api_feed_is_a_static_and_an_rt_row():
     rt, static = build_sources([AMTRAK, {"feed_name": ""}])
     assert (static.source_id, static.catalog) == ("gz:amtrak:static", "gtfszone")
     assert static.urls == {"scheduled": AMTRAK["static_url"]}

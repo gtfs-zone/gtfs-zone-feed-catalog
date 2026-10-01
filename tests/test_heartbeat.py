@@ -3,8 +3,8 @@
 import httpx
 import respx
 
-from geometry_car.heartbeat import push_heartbeat
-from geometry_car.settings import Settings
+from gtfs_zone_feed_catalog.heartbeat import push_heartbeat
+from gtfs_zone_feed_catalog.settings import Settings
 
 PUSH = "http://gatus:8080/api/v1/endpoints/data_catalog-publish/external"
 

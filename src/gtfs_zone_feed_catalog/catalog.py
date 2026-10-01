@@ -3,7 +3,7 @@
 A row is one *source kind*, not one feed: an agency that publishes both a zip
 and a realtime endpoint is two rows, because the consuming apps pin one of each
 and must be able to select them separately. That is the same split
-``interlocking/scripts/generate-atlas-data.ts`` made, and the published
+``gtfs-zone-web-common/scripts/generate-atlas-data.ts`` made, and the published
 ``sources.json`` keeps its field names so a consumer can move over without a
 rewrite.
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from geometry_car.urls import is_absolute
+from gtfs_zone_feed_catalog.urls import is_absolute
 
 Kind = Literal["static", "rt"]
 
@@ -59,7 +59,7 @@ class Source:
     catalog: Literal["transitland", "mobilitydatabase", "gtfszone"]
     kind: Kind
     # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, or a
-    # cafe-car feed name.
+    # rt-api feed name.
     feed_id: str
     name: str
     operator_name: str = ""

@@ -4,7 +4,7 @@ import logging
 
 import httpx
 
-from geometry_car.settings import Settings
+from gtfs_zone_feed_catalog.settings import Settings
 
 log = logging.getLogger(__name__)
 

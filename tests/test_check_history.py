@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from geometry_car.assets.check_history import DOWN, UNKNOWN, UP, fold, record
-from geometry_car.assets.endpoint_checks import CheckResult
-from geometry_car.assets.history_retention import prune
-from geometry_car.catalog import Source
-from geometry_car.history.models import (
+from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP, fold, record
+from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
+from gtfs_zone_feed_catalog.assets.history_retention import prune
+from gtfs_zone_feed_catalog.catalog import Source
+from gtfs_zone_feed_catalog.history.models import (
     CheckRun,
     EndpointRecord,
     EndpointState,
@@ -16,7 +16,7 @@ from geometry_car.history.models import (
     SourceEndpoint,
     SourceRecord,
 )
-from geometry_car.settings import settings
+from gtfs_zone_feed_catalog.settings import settings
 
 NOW = datetime(2026, 9, 1, tzinfo=UTC)
 VP = "https://example.org/vp.pb"

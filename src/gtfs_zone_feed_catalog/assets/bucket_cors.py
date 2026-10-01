@@ -7,7 +7,7 @@ publishing the catalog is that those apps fetch it.
 
 This lives here rather than in the deploy's ``garage-init`` job because Garage's
 admin API does not set CORS - it is an S3 call, and hand-rolling SigV4 in a
-shell script is exactly the pain worth avoiding. geometry-car already holds
+shell script is exactly the pain worth avoiding. feed-catalog already holds
 credentials for this bucket and already speaks S3 through boto3.
 
 The client is built here rather than borrowed from ``ObjectStore``, which
@@ -23,7 +23,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from dagster import asset
-from railroad_club.object_store import ObjectStoreSettings
+from gtfs_zone_db_models.object_store import ObjectStoreSettings
 
 log = logging.getLogger(__name__)
 
