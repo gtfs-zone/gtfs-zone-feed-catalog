@@ -1,30 +1,6 @@
-# gtfs-zone-feed-catalog: Claude Guide
+# Architecture
 
-## Project Overview
-
-Dagster pipeline that inventories the world of GTFS. It ingests the Transitland
-Atlas DMFR corpus and the Mobility Database daily, checks whether each feed
-endpoint is reachable, keeps history in Postgres, and publishes public JSON
-artifacts to a Garage bucket served at `data.gtfs.zone`.
-
-The artifacts replace the build-time `public/atlas-feeds.json` that
-`gtfs-zone-editor` and `rt-viewer` each shipped their own stale copy of, and the
-hand-curated `EXAMPLES` list that used to live in `gtfs-zone-web-common`; the feeds
-rt.gtfs.zone serves come from rt-api's own catalog.
-
-## Commands
-
-```bash
-uv sync              # install dependencies
-ruff check .         # lint
-ruff format .        # format
-uv run pytest        # tests
-uv run dagster dev   # run the pipeline locally, UI on :3000
-uv run alembic upgrade head   # migrate the history tables (needs DATABASE_URL)
-pre-commit install   # install git hooks
-```
-
-## Architecture
+## Assets
 
 Assets live one per module under `src/gtfs_zone_feed_catalog/assets/`, in dependency
 order:
@@ -42,6 +18,8 @@ order:
 | `history_retention` | Delete old `endpoint_state` and `endpoint_content_state` rows, and absent sources, endpoints and feeds, past their window |
 | `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
+
+## Artifacts
 
 The published documents, all shaped in `artifacts.py`:
 
@@ -61,6 +39,8 @@ The published documents, all shaped in `artifacts.py`:
 with a link; the Mobility Database catalog is CC0. Feed contents are licensed by
 their publishers.
 
+## History storage
+
 Storage is shaped so it does not grow with feeds x days: `endpoint_state` holds
 one row per **state change**, not per check, so a URL up for a year is one row.
 
@@ -71,7 +51,7 @@ row is up when all its URLs answer. A feed has a per-role state (up when any
 URL for that role answers, so a consumer can load it) and an overall state (up
 only when every checkable URL answers); each consumer applies its own rule.
 
-### Logical feeds
+## Logical feeds
 
 Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
 joins rows on exactly four kinds of evidence:
@@ -103,7 +83,7 @@ Coordinates come from the Mobility Database only. DMFR carries no place data, so
 Transitland-only rows are unplaced unless a cross-link supplies coordinates. The
 unplaced count is published and shown, not hidden.
 
-## Environment Variables
+## Environment variables
 
 | Variable | Description |
 |---|---|
@@ -127,47 +107,3 @@ unplaced count is published and shown, not hidden.
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `gtfs_zone_db_models.object_store`, not by this repo's `Settings` |
-
-## Rules
-
-- Never include `Co-Authored-By: Claude ...` trailers in commit messages.
-- Cross-repo work is allowed: sibling gtfs.zone repos live under the same parent
-  directory and may be read and edited when a change spans repos.
-- Module loggers are named `log`, never `logger`: `log = logging.getLogger(__name__)`
-- `DAGSTER_HOME` must point at a directory the image already owns
-  (`/app/dagster_home`). `/app` is root-owned and the process runs as `bridge`,
-  so the default lands somewhere unwritable and fails late.
-- The refresh token goes in `.env` (gitignored) and in the cluster's
-  `gtfs-app-secrets` only. Neither it nor the access token is ever logged.
-- Endpoint checks are polite by construction: bounded concurrency, one request
-  at a time per host, a delay between them and an honest User-Agent. Ten
-  thousand requests a day from a home IP is a monitor only while that holds.
-- Retention is load-bearing, not tidiness: one 40Gi Garage volume holds every
-  snapshot, and snapshots are written only when the content hash changes.
-- Tests run against no services. `respx` for HTTP, `moto` for the bucket,
-  SQLite with `StaticPool` for the history tables.
-- An asset's parameter annotations are resolved by Dagster at import time, so a
-  type an asset signature names must be imported at runtime, never under
-  `TYPE_CHECKING`, and the module must not use `from __future__ import
-  annotations` if it annotates `context`. Both failures are import-time, loud.
-- `gtfs_zone_feed_catalog/assets/__init__.py` stays empty of imports on purpose:
-  re-exporting the asset objects shadows the submodule names, and then anything
-  addressing a module by its dotted path gets the asset instead.
-- Both catalogs list many of the same feeds. Catalog rows are cross-linked by
-  normalized URL (`same_endpoint_as`), never merged - merging means picking
-  whose id and name win and silently losing the loser. Logical feeds sit on
-  top and reference rows by id; they never replace or rewrite them.
-- Migrations touching tables with history must be tried against a copy of the
-  live tables (`pg_dump -t` into a local Postgres), not only SQLite: the tests
-  stamp past `7c2e5a1d9b30` because SQLite cannot `ALTER COLUMN ... TYPE`.
-
-## Related Repos
-
-| Repo | Description | URL |
-|---|---|---|
-| feed-list | Frontend for these artifacts at list.gtfs.zone | https://github.com/gtfs-zone/gtfs-zone-feed-list |
-| gtfs-zone-db-models | Shared Python library, including the object-store client | https://github.com/gtfs-zone/gtfs-zone-db-models |
-| gtfs-zone-web-common | Shared frontend library; consumes the published catalog | https://github.com/gtfs-zone/gtfs-zone-web-common |
-| rt-api | GTFS-RT HTTP API serving real-time feeds | https://github.com/gtfs-zone/gtfs-zone-rt-api |
-| static-importer | Worker that ingests and processes GTFS schedule data | https://github.com/gtfs-zone/gtfs-zone-static-importer |
-| gtfs-zone-infra | ArgoCD-managed k3s deployment | https://github.com/gtfs-zone/gtfs-zone-infra |
