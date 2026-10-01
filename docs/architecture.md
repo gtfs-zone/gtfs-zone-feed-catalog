@@ -10,6 +10,7 @@ order:
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
 | `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
+| `ntd` | FTA's NTD GTFS weblinks over SODA3 (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
@@ -36,8 +37,9 @@ The published documents, all shaped in `artifacts.py`:
 
 `sources.json`, `feeds.json` and `manifest.json` carry a top-level `attribution`
 (`artifacts.ATTRIBUTION`): Transitland Atlas is CC-BY 4.0 and must be credited
-with a link; the Mobility Database catalog is CC0. Feed contents are licensed by
-their publishers.
+with a link; the Mobility Database catalog is CC0; the NTD weblinks are a US
+government work, credited to the Federal Transit Administration. Feed contents
+are licensed by their publishers.
 
 ## History storage
 
@@ -69,7 +71,7 @@ reference makes them one feed; PTV's nested-zip feeds sharing one download are
 one feed) and a wrong link can only be undone by changing the rules. Names:
 a Transitland operator, then a Mobility Database provider (its feed_name
 becomes the feed's `subtitle`), then the schedule's own single agency or
-publisher from the content report, then any row's name. Coordinates: any
+publisher from the content report, then an NTD agency, then any row's name. Coordinates: any
 placed member.
 
 Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
@@ -80,8 +82,10 @@ is kept absent, with its members, for the absent-retention window, so it gets
 its id back if the group returns.
 
 Coordinates come from the Mobility Database only. DMFR carries no place data, so
-Transitland-only rows are unplaced unless a cross-link supplies coordinates. The
-unplaced count is published and shown, not hidden.
+Transitland-only rows are unplaced unless a cross-link supplies coordinates. NTD
+rows carry a text place (US, state, city) but no coordinates; a feed with no
+placed member falls back to that. The unplaced count is published and shown,
+not hidden.
 
 ## Environment variables
 
@@ -103,6 +107,8 @@ unplaced count is published and shown, not hidden.
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
 | `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
 | `RT_API_CATALOG_URL` | rt-api's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
+| `NTD_WEBLINKS_URL` | NTD GTFS weblinks SODA3 query endpoint (default `https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json`); blank skips it |
+| `NTD_APP_TOKEN` | Optional Socrata app token, sent as `X-App-Token`; never logged |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |

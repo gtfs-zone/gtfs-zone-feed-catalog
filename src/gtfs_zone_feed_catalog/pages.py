@@ -82,6 +82,7 @@ CATALOG_LABELS = {
     "transitland": "Transitland",
     "mobilitydatabase": "Mobility Database",
     "gtfszone": "rt.gtfs.zone",
+    "ntd": "National Transit Database",
 }
 
 
@@ -132,7 +133,9 @@ def _catalogs(rows: list[Source]) -> str:
         for catalog, label in CATALOG_LABELS.items()
         if any(row.catalog == catalog for row in rows)
     ]
-    return " and ".join(names)
+    if len(names) <= 2:
+        return " and ".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def description(feed: Feed, rows: list[Source], since: datetime | None) -> str:

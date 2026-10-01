@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # Empty skips it.
     rt_api_catalog_url: str = "https://rt.gtfs.zone/feeds"
 
+    # FTA's NTD GTFS weblinks dataset, over Socrata's SODA3 query API. Empty
+    # skips it. The token is optional, sent as X-App-Token, and never logged.
+    ntd_weblinks_url: str = (
+        "https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json"
+    )
+    ntd_app_token: str = ""
+
     # Endpoint checking. Ten thousand outbound requests from one home IP is a
     # monitor only if it stays polite: a global cap, one request at a time per
     # host, and a pause between them.

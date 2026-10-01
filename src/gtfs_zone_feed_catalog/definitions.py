@@ -26,7 +26,7 @@ ALL_ASSETS = load_assets_from_package_module(assets)
 daily_catalog = define_asset_job(
     "daily_catalog",
     selection=AssetSelection.all(),
-    description="Ingest both catalogs, check every endpoint, publish the artifacts",
+    description="Ingest every catalog, check every endpoint, publish the artifacts",
 )
 
 daily_schedule = ScheduleDefinition(

@@ -8,7 +8,7 @@ shape of what consumers fetch is testable without a bucket.
 `vehiclesUrl`, `tripUpdatesUrl`, `alertsUrl`) as a compatible subset, so a
 consumer moves over by changing where it fetches rather than how it reads. The
 new fields sit alongside in snake_case. ``rowId`` values are now namespaced by
-catalog (`tl:`, `md:`, `gz:`), which is the one deliberate break.
+catalog (`tl:`, `md:`, `gz:`, `ntd:`), which is the one deliberate break.
 
 ``feeds.json`` is the layer consumers list: one entry per logical feed, which
 references its rows by ``rowId``. ``search.json`` is the same feeds cut down to
@@ -41,7 +41,8 @@ TRANSITLAND_FEED_BASE = "https://www.transit.land/feeds/"
 MOBILITYDATABASE_FEED_BASE = "https://mobilitydatabase.org/feeds/"
 
 # Carried at the top of sources.json, feeds.json and manifest.json. The Atlas
-# is CC-BY 4.0 and asks for a link; the Mobility Database catalog is CC0.
+# is CC-BY 4.0 and asks for a link; the Mobility Database catalog is CC0; the
+# NTD weblinks are a US government work.
 ATTRIBUTION: dict[str, Any] = {
     "catalogs": [
         {
@@ -55,6 +56,12 @@ ATTRIBUTION: dict[str, Any] = {
             "url": "https://mobilitydatabase.org",
             "license": "CC0-1.0",
             "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        },
+        {
+            "name": "National Transit Database (FTA)",
+            "url": "https://data.transportation.gov/d/2u7n-ub22",
+            "license": "Public Domain U.S. Government",
+            "licenseUrl": "https://www.usa.gov/government-works",
         },
     ],
     "feeds": (

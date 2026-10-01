@@ -1,7 +1,8 @@
 # gtfs-zone-feed-catalog
 
 Dagster pipeline that inventories the world of GTFS. It ingests the Transitland
-Atlas DMFR corpus and the Mobility Database daily, checks whether each feed
+Atlas DMFR corpus, the Mobility Database and the FTA National Transit Database's
+GTFS weblinks daily, checks whether each feed
 endpoint still answers, keeps the history in Postgres, and publishes public JSON
 artifacts to object storage at `data.gtfs.zone`.
 

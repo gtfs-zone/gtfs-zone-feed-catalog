@@ -28,9 +28,12 @@ def row(source_id: str, kind: str = "rt", **urls: str) -> Source:
     catalog, feed_id, _ = source_id.split(":")
     return Source(
         source_id=source_id,
-        catalog={"tl": "transitland", "md": "mobilitydatabase", "gz": "gtfszone"}[
-            catalog
-        ],
+        catalog={
+            "tl": "transitland",
+            "md": "mobilitydatabase",
+            "gz": "gtfszone",
+            "ntd": "ntd",
+        }[catalog],
         kind=kind,
         feed_id=feed_id,
         name=source_id,
@@ -130,6 +133,40 @@ def test_name_prefers_an_operator_then_a_provider_then_the_agency():
 
     operated = replace(tl, name="MTA", operator_name="Metro Transit Authority")
     assert build_feeds([operated, provided], {}, {}, contents)[0].name == "MTA"
+
+
+def test_an_ntd_agency_ranks_after_the_schedule_and_before_row_names():
+    tl = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
+    md = row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip")
+    ntd = replace(
+        row("ntd:00001-abcdef:static", kind="static", scheduled="https://a.org/g.zip"),
+        name="King County",
+        operator_name="King County",
+    )
+    assert build_feeds([tl, md, ntd], {}, {})[0].name == "King County"
+
+    content = FeedContent(
+        url="https://a.org/g.zip",
+        outcome="ok",
+        checked=NOW.date(),
+        since=NOW.date(),
+        facts={"agencies": [{"name": "King County Metro"}]},
+    )
+    contents = {"https://a.org/g.zip": content}
+    assert build_feeds([tl, ntd], {}, {}, contents)[0].name == "King County Metro"
+
+
+def test_ntd_agencies_sharing_a_weblink_are_one_feed_with_a_text_place():
+    place = Place(country_code="US", country="United States", subdivision="CA")
+    rows = [
+        row("ntd:1-aaaaaa:static", kind="static", scheduled="https://a.org/g.zip"),
+        row("ntd:2-aaaaaa:static", kind="static", scheduled="https://a.org/g.zip"),
+        row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip"),
+    ]
+    rows[0] = rows[0].with_place(place)
+    (feed,) = build_feeds(rows, {}, {})
+    assert len(feed.members) == 3
+    assert feed.place == place
 
 
 def test_coordinates_come_from_any_placed_member():

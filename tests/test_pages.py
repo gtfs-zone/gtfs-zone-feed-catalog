@@ -147,3 +147,26 @@ def test_publishing_rewrites_only_changed_pages(store):
     gone = publish_pages(store, ROWS, [], STATUSES, later)
     assert gone["pages_removed"] == 1
     assert store.list_prefix(prefix) == []
+
+
+def test_three_catalogs_are_listed_with_commas():
+    rows = [
+        Source(
+            source_id=f"{prefix}:a:static",
+            catalog=catalog,
+            kind="static",
+            feed_id="a",
+            name="A",
+            urls={"scheduled": "https://example.org/a.zip"},
+        )
+        for prefix, catalog in (
+            ("tl", "transitland"),
+            ("md", "mobilitydatabase"),
+            ("ntd", "ntd"),
+        )
+    ]
+    (feed,) = build_feeds(rows, {}, {})
+    assert (
+        "from Transitland, Mobility Database and National Transit Database."
+        in pages.description(feed, rows, None)
+    )

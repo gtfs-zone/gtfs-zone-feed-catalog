@@ -218,12 +218,14 @@ def content_agency(content: FeedContent | None) -> str:
 
 def feed_name(rows: list[Source], content: FeedContent | None = None) -> str:
     """The first of: a Transitland operator, a Mobility Database provider, the
-    schedule's own agency, then any row's name. Static rows first throughout."""
+    schedule's own agency, an NTD agency, then any row's name. Static rows first
+    throughout."""
     ordered = sorted(rows, key=lambda row: (row.kind != "static", row.source_id))
     candidates = [
         *(r.name for r in ordered if r.catalog == "transitland" and r.operator_name),
         *(_provider(r) for r in ordered),
         content_agency(content),
+        *(r.operator_name for r in ordered if r.catalog == "ntd"),
         *(r.name for r in ordered if r.catalog == "mobilitydatabase"),
         *(r.name for r in ordered),
     ]

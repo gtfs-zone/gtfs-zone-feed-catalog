@@ -78,3 +78,21 @@ def test_merge_keeps_one_row_per_id_and_sorts():
     assert [r.source_id for r in rows] == ["md:mdb-1:static", "tl:f-a:static"]
     # First listed wins a collision, so the catalog order in `sources` decides.
     assert rows[1].urls["scheduled"] == "https://a/1"
+
+
+def test_an_ntd_row_cross_links_without_lending_its_text_place():
+    text_place = Place(country_code="US", subdivision="Washington")
+    ntd = Source(
+        source_id="ntd:00001-abcdef:static",
+        catalog="ntd",
+        kind="static",
+        feed_id="00001-abcdef",
+        name="King County",
+        urls={"scheduled": "HTTPS://A.org/g.zip"},
+        place=text_place,
+    )
+    tl_row, ntd_row = cross_link([tl("https://a.org/g.zip"), ntd])
+    assert tl_row.same_endpoint_as == ("ntd:00001-abcdef:static",)
+    assert ntd_row.same_endpoint_as == ("tl:f-a:static",)
+    # Only coordinates travel along a link.
+    assert tl_row.place == Place()

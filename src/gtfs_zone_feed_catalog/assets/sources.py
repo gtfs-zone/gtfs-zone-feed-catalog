@@ -1,12 +1,12 @@
 """Every catalog merged into one list - cross-linked, not collapsed.
 
-Transitland and the Mobility Database describe overlapping worlds with
-different ids, different names and different metadata, and neither is a superset
-of the other. Collapsing them would mean choosing whose name and whose id wins
-for every overlap, and quietly losing the loser. So both rows stay, and a row
-carries ``same_endpoint_as``: the ids in *other* catalogs whose normalized
-download URL is the same. A consumer that wants one row per endpoint can fold
-on that; a consumer that wants to show which catalogs agree can show it.
+Transitland, the Mobility Database, rt-api and the NTD describe overlapping
+worlds with different ids, different names and different metadata, and none is
+a superset of the others. Collapsing them would mean choosing whose name and
+whose id wins for every overlap, and quietly losing the loser. So every row
+stays, and a row carries ``same_endpoint_as``: the ids in *other* catalogs whose
+normalized download URL is the same. A consumer that wants one row per endpoint
+can fold on that; a consumer that wants to show which catalogs agree can show it.
 
 Coordinates travel along those links, because the Mobility Database is the only
 catalog that has any. A Transitland row cross-linked to a placed MDB row gets
@@ -76,8 +76,9 @@ def sources(
     transitland_atlas: list[Source],
     mobility_database: list[Source],
     rt_api: list[Source],
+    ntd: list[Source],
 ) -> list[Source]:
-    rows = cross_link(merge(transitland_atlas, mobility_database, rt_api))
+    rows = cross_link(merge(transitland_atlas, mobility_database, rt_api, ntd))
 
     placed = sum(1 for row in rows if row.place.placed)
     cross_linked = sum(1 for row in rows if row.same_endpoint_as)

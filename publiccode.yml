@@ -20,14 +20,14 @@ description:
     shortDescription: >
       A Dagster pipeline that inventories public GTFS feeds and checks whether each one still answers.
     longDescription: >
-      GTFS.zone Feed Catalog ingests the Transitland Atlas and the Mobility
-      Database every day, checks whether each feed endpoint still answers,
+      GTFS.zone Feed Catalog ingests the Transitland Atlas, the Mobility
+      Database and the FTA National Transit Database's GTFS weblinks every day, checks whether each feed endpoint still answers,
       keeps the history in PostgreSQL, and publishes public JSON artifacts to
       data.gtfs.zone: the sources, the logical feeds, their status, a search
       index and a manifest consumers poll. No feed bodies are downloaded or
       stored. It also hosts the Dagster instance the timetable sites run in.
     features:
-      - Daily ingest of the Transitland Atlas and the Mobility Database
+      - Daily ingest of the Transitland Atlas, the Mobility Database and the NTD GTFS weblinks
       - Reachability checks for every feed endpoint
       - Public JSON artifacts with dated snapshots
 

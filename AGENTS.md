@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Dagster pipeline that inventories the world of GTFS: it ingests the Transitland
-Atlas and the Mobility Database daily, checks every feed endpoint, keeps history
+Atlas, the Mobility Database and the NTD GTFS weblinks daily, checks every feed endpoint, keeps history
 in Postgres, and publishes JSON artifacts to a Garage bucket served at
 `data.gtfs.zone`. A `v*` tag publishes the image.
 
@@ -27,7 +27,8 @@ grouping and env vars are in [docs/architecture.md](docs/architecture.md).
 - **Artifact shapes are a contract** with feed-list (`src/data/artifacts.ts`),
   gtfs-zone-web-common and timetable-sites. Change them here first.
 - **Attribution**: `sources.json`, `feeds.json` and `manifest.json` carry
-  `artifacts.ATTRIBUTION`. Transitland Atlas is CC-BY 4.0 and must be credited.
+  `artifacts.ATTRIBUTION`. Transitland Atlas is CC-BY 4.0 and must be credited;
+  the NTD is credited to the Federal Transit Administration.
 - **Polite checks**: bounded concurrency, one request at a time per host, a
   delay between them and an honest User-Agent. Keep it that way.
 - **Retention is load-bearing**: one 40Gi Garage volume holds every snapshot.

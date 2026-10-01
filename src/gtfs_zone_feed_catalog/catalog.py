@@ -54,10 +54,10 @@ class Source:
     """One selectable endpoint set, from one catalog."""
 
     source_id: str
-    catalog: Literal["transitland", "mobilitydatabase", "gtfszone"]
+    catalog: Literal["transitland", "mobilitydatabase", "gtfszone", "ntd"]
     kind: Kind
-    # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, or a
-    # rt-api feed name.
+    # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, a
+    # rt-api feed name, or an NTD id with a hash of the weblink.
     feed_id: str
     name: str
     operator_name: str = ""
@@ -107,7 +107,7 @@ def make_rows(
 ) -> list[Source]:
     """Split one catalog feed into its static and rt rows.
 
-    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``gz``). A
+    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``gz``, ``ntd``). A
     static row's id ends ``:static`` and an rt row's ``:rt`` only where one feed
     can produce both; the Mobility Database gives realtime its own mdb id, so
     it passes the kind suffix it wants in ``feed_id``.

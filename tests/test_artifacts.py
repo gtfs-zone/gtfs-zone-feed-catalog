@@ -128,7 +128,7 @@ def test_the_manifest_hashes_every_artifact():
     assert manifest["attribution"] == artifacts.ATTRIBUTION
 
 
-def test_sources_and_feeds_credit_both_catalogs_and_their_licenses():
+def test_sources_and_feeds_credit_every_catalog_and_its_license():
     sources = json.loads(artifacts.sources_document([ROW], {}, NOW))
     feeds = json.loads(artifacts.feeds_document([], {}, NOW))
     for document in (sources, feeds):
@@ -138,6 +138,7 @@ def test_sources_and_feeds_credit_both_catalogs_and_their_licenses():
         assert catalogs == {
             "Transitland Atlas": "CC-BY-4.0",
             "Mobility Database": "CC0-1.0",
+            "National Transit Database (FTA)": "Public Domain U.S. Government",
         }
 
 
@@ -354,3 +355,17 @@ def test_a_search_entry_is_the_feed_cut_down():
         "b": 4096,
         "m": "2026-09-01",
     }
+
+
+def test_the_summary_counts_ntd_rows_and_links_no_catalog_page():
+    ntd = Source(
+        source_id="ntd:00001-abcdef:static",
+        catalog="ntd",
+        kind="static",
+        feed_id="00001-abcdef",
+        name="King County",
+        urls={"scheduled": "https://example.org/a.zip"},
+    )
+    summary = json.loads(artifacts.summary_document([ROW, ntd], {}, [], NOW))
+    assert summary["by_catalog"] == {"transitland": 1, "ntd": 1}
+    assert artifacts.catalog_url(ntd) is None
