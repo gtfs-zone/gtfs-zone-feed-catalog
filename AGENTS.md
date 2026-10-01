@@ -3,7 +3,7 @@
 Dagster pipeline that inventories the world of GTFS: it ingests the Transitland
 Atlas and the Mobility Database daily, checks every feed endpoint, keeps history
 in Postgres, and publishes JSON artifacts to a Garage bucket served at
-`data.gtfs.zone`. Pushing to `main` publishes the image.
+`data.gtfs.zone`. A `v*` tag publishes the image.
 
 ## Commands
 

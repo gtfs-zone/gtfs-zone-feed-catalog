@@ -82,7 +82,7 @@ Then push the commit and the tag:
 git push --follow-tags origin main
 ```
 
-Deploys do not wait for a tag: every push to `main` triggers `.github/workflows/build.yml`, which builds the image, pushes it to `ghcr.io/gtfs-zone/gtfs-zone-feed-catalog`, and records the digest in [gtfs-zone-infra](https://github.com/gtfs-zone/gtfs-zone-infra) for ArgoCD to roll out. A version tag adds the version as an image tag.
+Pushing a version tag triggers `.github/workflows/build.yml`, which builds the image, pushes it to `ghcr.io/gtfs-zone/gtfs-zone-feed-catalog:vX.Y.Z`, and records the digest in [gtfs-zone-infra](https://github.com/gtfs-zone/gtfs-zone-infra) for ArgoCD to roll out.
 
 ## Development Workflow
 

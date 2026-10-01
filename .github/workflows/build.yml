@@ -1,8 +1,8 @@
 name: Build
 
-# Runs the check workflow, builds the image and pushes it to
-# ghcr.io/<owner>/<repo> tagged with the short SHA, latest, and the tag on v*.
-# Then records the digest in gtfs-zone-infra, which ArgoCD rolls out.
+# On a v* tag: runs the check workflow, builds the image and pushes it to
+# ghcr.io/<owner>/<repo> tagged with the tag and latest. Then records the digest
+# in gtfs-zone-infra, which ArgoCD rolls out.
 #
 # Requires:
 #   Secrets:
@@ -10,8 +10,6 @@ name: Build
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -38,19 +36,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Image tags
-        id: tags
-        run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY}"
-          SHA="${GITHUB_SHA::7}"
-          TAGS="$IMAGE:$SHA,$IMAGE:latest"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            TAGS="$TAGS,$IMAGE:$GITHUB_REF_NAME"
-          fi
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -67,7 +52,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
 
       - name: Load infra deploy key
         uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
@@ -76,9 +63,8 @@ jobs:
 
       - name: Record digest in gtfs-zone-infra
         env:
-          IMAGE: ${{ steps.tags.outputs.image }}
+          IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ steps.build.outputs.digest }}
-          REF: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.tags.outputs.sha }}
         run: |
           git clone --depth 1 git@github.com:gtfs-zone/gtfs-zone-infra.git /tmp/infra
           cd "/tmp/infra/${SITE_DIR}"
@@ -87,7 +73,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${SITE_DIR}/kustomization.yaml"
-          git commit -m "deploy(feed-catalog): feed-catalog ${REF}"
+          git commit -m "deploy(feed-catalog): feed-catalog ${GITHUB_REF_NAME}"
           # Concurrent releases race on the same file; rebase and retry rather
           # than failing the release.
           for i in 1 2 3; do
