@@ -1,5 +1,7 @@
 # gtfs-zone-feed-catalog
 
+[![CI](https://img.shields.io/github/actions/workflow/status/gtfs-zone/gtfs-zone-feed-catalog/check.yml?branch=main&label=CI)](https://github.com/gtfs-zone/gtfs-zone-feed-catalog/actions/workflows/check.yml?query=branch%3Amain) [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE.txt) [![Container image](https://img.shields.io/badge/image-ghcr.io-blue?logo=docker&logoColor=white)](https://github.com/gtfs-zone/gtfs-zone-feed-catalog/pkgs/container/gtfs-zone-feed-catalog)
+
 Dagster pipeline that inventories the world of GTFS. It ingests the Transitland
 Atlas DMFR corpus, the Mobility Database and the FTA National Transit Database's
 GTFS weblinks daily, checks whether each feed
