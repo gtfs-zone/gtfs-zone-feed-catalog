@@ -11,13 +11,16 @@ Every catalog value is untrusted text and is escaped on the way in.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
-import unicodedata
 from datetime import datetime, timedelta
 from html import escape
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
+
+from anyascii import anyascii
+from pykakasi import kakasi
 
 from gtfs_zone_feed_catalog.artifacts import catalog_url, feed_content, feed_since
 from gtfs_zone_feed_catalog.catalog import RT_ROLES, STATIC_ROLES
@@ -86,15 +89,46 @@ CATALOG_LABELS = {
 }
 
 
-def slugify(name: str) -> str:
-    """ASCII, lowercase, hyphenated; decorative only, the id is what resolves."""
-    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
-    return slug[:60].rstrip("-") or "feed"
+SLUG_LENGTH = 60
+# Hiragana and katakana.
+KANA = re.compile(r"[\u3040-\u30ff]")
+# Hepburn long vowels, written short as in Tokyo or Kyushu.
+LONG_VOWELS = re.compile(r"(?<=o)u|(?<=u)u")
+# Cyrillic soft and hard signs, which anyascii writes as apostrophes.
+SIGNS = re.compile("[ьъЬЪ]")
+
+
+@functools.cache
+def _kakasi() -> kakasi:
+    return kakasi()
+
+
+def romanize(text: str, country_code: str = "") -> str:
+    """ASCII text: Hepburn for Japanese (a JP feed, or kana), else anyascii."""
+    if country_code == "JP" or KANA.search(text):
+        text = " ".join(
+            LONG_VOWELS.sub("", item["hepburn"])
+            if item["hepburn"] != item["orig"]
+            else item["orig"]
+            for item in _kakasi().convert(text)
+        )
+    return anyascii(SIGNS.sub("", text))
+
+
+def slugify(name: str, country_code: str = "") -> str:
+    """Romanized, lowercase, hyphenated, cut at a word boundary, as
+    gtfs_zone_timetable_sites.catalog.slugify; decorative only, the id is what
+    resolves."""
+    slug = re.sub(r"[^a-z0-9]+", "-", romanize(name, country_code).lower()).strip("-")
+    if len(slug) > SLUG_LENGTH:
+        head = slug[: SLUG_LENGTH + 1]
+        slug = head[: head.rfind("-")] if "-" in head else slug[:SLUG_LENGTH]
+    return slug or "feed"
 
 
 def feed_url(feed: Feed) -> str:
-    return f"{SITE_BASE}/feed/{feed.feed_id}/{slugify(feed.name)}"
+    slug = slugify(feed.name, feed.place.country_code)
+    return f"{SITE_BASE}/feed/{feed.feed_id}/{slug}"
 
 
 def _absolute(url: str) -> bool:

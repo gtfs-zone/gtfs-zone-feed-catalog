@@ -170,3 +170,18 @@ def test_three_catalogs_are_listed_with_commas():
         "from Transitland, Mobility Database and National Transit Database."
         in pages.description(feed, rows, None)
     )
+
+
+def test_slugify_romanizes_every_script():
+    assert pages.slugify("Société de transport") == "societe-de-transport"
+    assert pages.slugify("Ужгородська міська рада") == "uzhgorodska-miska-rada"
+    assert pages.slugify("Αθήνα") == "athina"
+    assert pages.slugify("静岡市", "JP") == "shizuokashi"
+    assert pages.slugify("東京都", "JP") == "tokyoto"
+    assert pages.slugify("さいたま市") == "saitama-shi"
+    assert pages.slugify("!!!") == "feed"
+    name = "Syndicat mixte des transports collectifs de la region de Grenoble"
+    assert (
+        pages.slugify(name)
+        == "syndicat-mixte-des-transports-collectifs-de-la-region-de"
+    )
