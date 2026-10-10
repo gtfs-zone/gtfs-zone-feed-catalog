@@ -1,3 +1,9 @@
+## v0.4.0 (2026-10-10)
+
+### Feat
+
+- **pages**: romanize feed page slugs in every script
+
 ## v0.3.0 (2026-10-02)
 
 ### Feat
