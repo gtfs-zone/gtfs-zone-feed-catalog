@@ -22,7 +22,12 @@ from urllib.parse import quote, urlencode
 from anyascii import anyascii
 from pykakasi import kakasi
 
-from gtfs_zone_feed_catalog.artifacts import catalog_url, feed_content, feed_since
+from gtfs_zone_feed_catalog.artifacts import (
+    catalog_url,
+    feed_content,
+    feed_never_up,
+    feed_since,
+)
 from gtfs_zone_feed_catalog.catalog import RT_ROLES, STATIC_ROLES
 
 if TYPE_CHECKING:
@@ -172,11 +177,20 @@ def _catalogs(rows: list[Source]) -> str:
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def description(feed: Feed, rows: list[Source], since: datetime | None) -> str:
+def _state_line(feed: Feed, since: datetime | None, never_up: bool) -> str:
+    """Down since 2026-09-23, Down, never seen up, or just the state."""
+    state = STATE_LABELS.get(feed.state, feed.state)
+    if never_up:
+        return f"{state}, never seen up"
+    return f"{state} since {since.date().isoformat()}" if since else state
+
+
+def description(
+    feed: Feed, rows: list[Source], since: datetime | None, never_up: bool = False
+) -> str:
     where = _place_line(feed)
     subject = f"{feed.name} ({where})" if where else feed.name
-    state = STATE_LABELS.get(feed.state, feed.state)
-    checked = f"{state} since {since.date().isoformat()}" if since else state
+    checked = _state_line(feed, since, never_up)
     return (
         f"{_kinds(feed)} feed URLs for {subject}, from {_catalogs(rows)}. "
         f"Checked daily for whether it answers: {checked}."
@@ -288,10 +302,11 @@ def head_fragment(
     since: datetime | None,
     now: datetime,
     content: FeedContent | None = None,
+    never_up: bool = False,
 ) -> str:
     url = escape(feed_url(feed))
     page_title = escape(title(feed))
-    desc = escape(description(feed, rows, since))
+    desc = escape(description(feed, rows, since, never_up))
     lines = [
         f"<title>{page_title}</title>",
         f'<meta name="description" content="{desc}" />',
@@ -353,9 +368,9 @@ def body_fragment(
     rows: list[Source],
     since: datetime | None,
     content: FeedContent | None = None,
+    never_up: bool = False,
 ) -> str:
-    state = STATE_LABELS.get(feed.state, feed.state)
-    status = f"{state} since {since.date().isoformat()}" if since else state
+    status = _state_line(feed, since, never_up)
     out = [f"<h1>{escape(feed.name)}</h1>"]
     if where := _place_line(feed):
         out.append(f"<p>{escape(where)}</p>")
@@ -418,10 +433,11 @@ def render(
 ) -> tuple[str, str]:
     """The (head, body) fragments for one feed."""
     since = feed_since(feed, statuses)
+    never_up = feed_never_up(feed, statuses)
     content = feed_content(feed, contents)
     return (
-        head_fragment(feed, rows, since, now, content),
-        body_fragment(feed, rows, since, content),
+        head_fragment(feed, rows, since, now, content, never_up),
+        body_fragment(feed, rows, since, content, never_up),
     )
 
 

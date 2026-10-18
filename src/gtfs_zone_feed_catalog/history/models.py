@@ -96,6 +96,9 @@ class EndpointRecord(Base):
     consecutive_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
+    # Whether any check has seen it up, so a down URL that never answered is
+    # not shown as down since its first check.
+    ever_up: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str] = mapped_column(String(32), nullable=False, default="")

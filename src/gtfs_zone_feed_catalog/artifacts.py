@@ -169,16 +169,29 @@ def feed_since(feed: Feed, statuses: dict[str, SourceStatus]) -> datetime | None
         return max(sinces) if sinces else None
     if feed.state not in ("down", "partial"):
         return None
-    down = {role for role, state in feed.role_state.items() if state == "down"}
-    if feed.state == "down" and "scheduled" in down:
-        down = {"scheduled"}
-    rows = {member for member, role in feed.member_roles if role in down}
     sinces = [
         s.since
-        for m in rows
+        for m in _state_rows(feed)
         if (s := statuses.get(m)) and s.state == "down" and s.since
     ]
     return min(sinces) if sinces else None
+
+
+def feed_never_up(feed: Feed, statuses: dict[str, SourceStatus]) -> bool:
+    """Down, and no check has ever seen the rows that make it so up."""
+    if feed.state != "down":
+        return False
+    rows = [statuses.get(m) for m in _state_rows(feed)]
+    return bool(rows) and all(s and s.state == "down" and s.never_up for s in rows)
+
+
+def _state_rows(feed: Feed) -> set[str]:
+    """The rows filling the roles that make a feed down or partial: the
+    schedule for a down feed that has one, else every down role."""
+    down = {role for role, state in feed.role_state.items() if state == "down"}
+    if feed.state == "down" and "scheduled" in down:
+        down = {"scheduled"}
+    return {member for member, role in feed.member_roles if role in down}
 
 
 def feed_content(
@@ -241,6 +254,8 @@ def feed_entry(
         entry["lastModified"] = feed.last_modified.isoformat()
     if (since := feed_since(feed, statuses)) is not None:
         entry["since"] = since.isoformat()
+    if feed_never_up(feed, statuses):
+        entry["neverUp"] = True
     if (content := feed_content(feed, contents)) is not None:
         entry["content"] = content_fields(content)
     members = [rows[m] for m in feed.members if m in (rows or {})]
@@ -286,6 +301,8 @@ def status_entries(statuses: dict[str, SourceStatus]) -> dict[str, dict[str, Any
             entry["failures"] = status.consecutive_failures
         if status.since is not None:
             entry["since"] = status.since.isoformat()
+        if status.never_up:
+            entry["never_up"] = True
         entries[source_id] = entry
     return entries
 
@@ -356,6 +373,8 @@ def search_entry(
         entry["m"] = feed.last_modified.date().isoformat()
     if (since := feed_since(feed, statuses)) is not None:
         entry["since"] = since.date().isoformat()
+    if feed_never_up(feed, statuses):
+        entry["nu"] = True
     return entry
 
 

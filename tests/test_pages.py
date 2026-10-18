@@ -172,6 +172,21 @@ def test_three_catalogs_are_listed_with_commas():
     )
 
 
+def test_a_feed_never_seen_up_says_so_instead_of_a_date():
+    row = Source(
+        source_id="tl:a:static",
+        catalog="transitland",
+        kind="static",
+        feed_id="a",
+        name="A",
+        urls={"scheduled": "https://example.org/a.zip"},
+    )
+    (feed,) = build_feeds([row], {}, {})
+    since = datetime(2026, 9, 23, tzinfo=UTC)
+    assert "never seen up" in pages.description(feed, [row], since, never_up=True)
+    assert "2026-09-23" not in pages.description(feed, [row], since, never_up=True)
+
+
 def test_slugify_romanizes_every_script():
     assert pages.slugify("Société de transport") == "societe-de-transport"
     assert pages.slugify("Ужгородська міська рада") == "uzhgorodska-miska-rada"
