@@ -273,6 +273,28 @@ def test_a_down_feed_is_down_since_its_earliest_failing_row():
     assert artifacts.feed_entry(feed, statuses)["since"] == MODIFIED.isoformat()
 
 
+def test_a_down_feed_no_check_has_seen_up_is_published_as_never_up():
+    (feed,) = build_feeds(
+        [STATIC],
+        {
+            "https://a.org/gtfs.zip": CheckResult(
+                url="https://a.org/gtfs.zip", ok=False, checked_at=NOW
+            )
+        },
+        {},
+    )
+    never = SourceStatus("md:mdb-1:static", "down", since=MODIFIED, never_up=True)
+    statuses = {"md:mdb-1:static": never}
+    assert artifacts.feed_entry(feed, statuses)["neverUp"] is True
+    assert artifacts.search_entry(feed, statuses)["nu"] is True
+    assert artifacts.status_entries(statuses)["md:mdb-1:static"]["never_up"] is True
+
+    was_up = {"md:mdb-1:static": SourceStatus("md:mdb-1:static", "down")}
+    assert "neverUp" not in artifacts.feed_entry(feed, was_up)
+    assert "nu" not in artifacts.search_entry(feed, was_up)
+    assert "never_up" not in artifacts.status_entries(was_up)["md:mdb-1:static"]
+
+
 def test_the_summary_counts_feeds_as_well_as_rows():
     feeds = build_feeds([STATIC, REALTIME, ROW], {}, {})
     summary = json.loads(

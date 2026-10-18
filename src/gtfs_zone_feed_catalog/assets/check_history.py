@@ -62,6 +62,8 @@ class SourceStatus:
     # When this state was first seen. Null until the database has been written
     # to at least once, since it is the history that knows.
     since: datetime | None = None
+    # Down, and no check has ever seen any of its failing URLs up.
+    never_up: bool = False
 
 
 def fold(
@@ -124,6 +126,7 @@ class _Current:
     state: str
     since: datetime | None
     consecutive_failures: int
+    ever_up: bool
 
 
 def _row_history(status: SourceStatus, endpoints: list[_Current]) -> SourceStatus:
@@ -131,7 +134,8 @@ def _row_history(status: SourceStatus, endpoints: list[_Current]) -> SourceStatu
 
     An up row has been up since its last URL came up. A down row has been down
     since its earliest still-failing URL went down, and has failed as many runs
-    running as its longest-failing URL.
+    running as its longest-failing URL, and has never been up if none of
+    those URLs ever was.
     """
     if status.state == UP:
         sinces = [e.since for e in endpoints if e.state == UP and e.since]
@@ -143,6 +147,7 @@ def _row_history(status: SourceStatus, endpoints: list[_Current]) -> SourceStatu
             status,
             since=min(sinces, default=None),
             consecutive_failures=max((e.consecutive_failures for e in down), default=0),
+            never_up=bool(down) and not any(e.ever_up for e in down),
         )
     return status
 
@@ -162,6 +167,8 @@ def _apply_check(endpoint: EndpointRecord, result: CheckResult, now: datetime) -
     endpoint.consecutive_failures = (
         endpoint.consecutive_failures + 1 if state == DOWN else 0
     )
+    if state == UP:
+        endpoint.ever_up = True
     changed = state != endpoint.state
     endpoint.state = state
     return changed
@@ -243,7 +250,11 @@ def record(
                 # Column defaults apply at INSERT, not construction, so the
                 # fields read below are set here.
                 endpoint = EndpointRecord(
-                    url=key, first_seen=now, state=UNKNOWN, consecutive_failures=0
+                    url=key,
+                    first_seen=now,
+                    state=UNKNOWN,
+                    consecutive_failures=0,
+                    ever_up=False,
                 )
                 session.add(endpoint)
                 endpoints[key] = endpoint
@@ -284,6 +295,7 @@ def record(
                         state=endpoints[key].state,
                         since=since_by_url.get(key),
                         consecutive_failures=endpoints[key].consecutive_failures,
+                        ever_up=endpoints[key].ever_up,
                     )
                     for key in set(links[row.source_id].values())
                     if key in checked

@@ -181,6 +181,21 @@ def test_an_rt_row_down_since_its_earliest_failing_url(session_factory):
     assert second.consecutive_failures == 2
 
 
+def test_a_row_no_check_has_seen_up_is_never_up(session_factory):
+    row = rt_row(vehicles=VP)
+    status = run([row], {VP: result(VP, ok=False, status=500)})["tl:f-a:rt"]
+    assert status.never_up is True
+
+
+def test_a_row_that_was_up_then_went_down_is_not_never_up(session_factory):
+    row = rt_row(vehicles=VP)
+    run([row], {VP: result(VP)})
+    status = run([row], {VP: result(VP, ok=False, status=500)})["tl:f-a:rt"]
+    assert status.never_up is False
+    with session_factory() as session:
+        assert session.get(EndpointRecord, VP).ever_up is True
+
+
 def test_a_source_the_catalogs_drop_stops_being_present(session_factory):
     row = rt_row(vehicles=VP)
     run([row], {})
