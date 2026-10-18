@@ -1,3 +1,9 @@
+## v0.5.0 (2026-10-18)
+
+### Feat
+
+- **status**: mark down feeds and rows no check has ever seen up
+
 ## v0.4.0 (2026-10-10)
 
 ### Feat
