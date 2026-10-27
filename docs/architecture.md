@@ -11,7 +11,7 @@ order:
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
 | `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
 | `ntd` | FTA's NTD GTFS weblinks over SODA3 (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
-| `sources` | One row per source kind, ids namespaced by catalog, cross-linked by normalized URL |
+| `sources` | One row per source kind, ids namespaced by catalog, cross-linked by URL with http and https unified |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
 | `feed_contents` | Read timetable-sites's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
@@ -58,7 +58,7 @@ only when every checkable URL answers); each consumer applies its own rule.
 Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
 joins rows on exactly four kinds of evidence:
 
-- a shared normalized URL, any kind, any catalog;
+- a shared URL (http and https unified), any kind, any catalog;
 - an MDB realtime row's `feed_references` to an MDB static row;
 - realtime URLs on the same host and path differing only in a final
   `vehicles`/`vehiclepositions`/`trips`/`tripupdates`/`alerts`/`servicealerts`

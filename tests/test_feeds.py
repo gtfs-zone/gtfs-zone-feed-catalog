@@ -109,6 +109,19 @@ def test_catalogs_sharing_a_url_and_one_feed_split_in_two_are_one_feed():
     assert len(group(rows)) == 1
 
 
+def test_catalogs_listing_a_url_as_http_and_https_are_one_feed():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    assert len(group(rows)) == 1
+
+
+def test_two_feeds_joined_again_take_the_lower_id():
+    existing = {"f-b": {"md:mdb-1:static"}, "f-a": {"tl:f-a:static"}}
+    assert assign_ids([["md:mdb-1:static", "tl:f-a:static"]], existing) == ["f-a"]
+
+
 def test_name_prefers_an_operator_then_a_provider_then_the_agency():
     tl = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
     md = row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip")

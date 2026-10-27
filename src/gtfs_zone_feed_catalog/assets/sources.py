@@ -5,8 +5,9 @@ worlds with different ids, different names and different metadata, and none is
 a superset of the others. Collapsing them would mean choosing whose name and
 whose id wins for every overlap, and quietly losing the loser. So every row
 stays, and a row carries ``same_endpoint_as``: the ids in *other* catalogs whose
-normalized download URL is the same. A consumer that wants one row per endpoint
-can fold on that; a consumer that wants to show which catalogs agree can show it.
+download URL is the same, by ``urls.link_key``. A consumer that wants one row
+per endpoint can fold on that; a consumer that wants to show which catalogs
+agree can show it.
 
 Coordinates travel along those links, because the Mobility Database is the only
 catalog that has any. A Transitland row cross-linked to a placed MDB row gets
@@ -22,13 +23,13 @@ from collections import defaultdict
 from dagster import asset
 
 from gtfs_zone_feed_catalog.catalog import Source
-from gtfs_zone_feed_catalog.urls import normalize_url
+from gtfs_zone_feed_catalog.urls import link_key
 
 log = logging.getLogger(__name__)
 
 
 def normalized_urls(source: Source) -> set[str]:
-    return {key for url in source.urls.values() if (key := normalize_url(url))}
+    return {key for url in source.urls.values() if (key := link_key(url))}
 
 
 def cross_link(rows: list[Source]) -> list[Source]:
