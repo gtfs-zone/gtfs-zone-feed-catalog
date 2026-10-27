@@ -128,6 +128,11 @@ def test_the_manifest_hashes_every_artifact():
     assert manifest["attribution"] == artifacts.ATTRIBUTION
 
 
+def test_feeds_lists_moved_ids():
+    document = artifacts.feeds_document([], {}, NOW, moved={"f-b": "f-a"})
+    assert json.loads(document)["moved"] == {"f-b": "f-a"}
+
+
 def test_sources_and_feeds_credit_every_catalog_and_its_license():
     sources = json.loads(artifacts.sources_document([ROW], {}, NOW))
     feeds = json.loads(artifacts.feeds_document([], {}, NOW))

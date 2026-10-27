@@ -15,6 +15,8 @@ from gtfs_zone_feed_catalog.assets.feeds import (
     feed_state,
     group,
     load_existing,
+    load_moved,
+    moved_to,
     persist,
 )
 from gtfs_zone_feed_catalog.catalog import Place, Source
@@ -332,3 +334,28 @@ def test_a_feed_that_loses_its_group_is_kept_absent_and_returns(session_factory)
     assert a_id in {f.feed_id for f in again}
     with session_factory() as session:
         assert session.get(FeedRecord, a_id).present is True
+
+
+def test_moved_to_names_the_feed_holding_most_members():
+    a = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
+    (feed,) = build_feeds([a], {}, {"f-new": {"tl:f-a:static"}})
+    members = {"f-old": {"tl:f-a:static", "md:gone:static"}, "f-new": set()}
+    assert moved_to(members, [feed]) == {"f-old": "f-new"}
+    assert moved_to({"f-lost": {"md:gone:static"}}, [feed]) == {}
+
+
+def test_a_feed_merged_into_another_is_moved_to_it(session_factory):
+    a = [row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")]
+    b = [row("md:mdb-1:static", kind="static", scheduled="https://b.org/g.zip")]
+    _history(a + b, {})
+    first = build_feeds(a + b, {}, load_existing())
+    persist(first)
+    ids = {f.members[0]: f.feed_id for f in first}
+
+    # b's row now also lists a's URL, so the two are one feed.
+    joined = [*a, replace(b[0], urls={"scheduled": "http://a.org/g.zip"})]
+    _history(joined, {})
+    (merged,) = build_feeds(joined, {}, load_existing())
+    persist([merged])
+    loser = ({*ids.values()} - {merged.feed_id}).pop()
+    assert load_moved() == {loser: merged.feed_id}

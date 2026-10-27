@@ -272,7 +272,9 @@ def feeds_document(
     generated_at: datetime,
     contents: dict[str, FeedContent] | None = None,
     sources: list[Source] | None = None,
+    moved: dict[str, str] | None = None,
 ) -> bytes:
+    """Every feed, and `moved`: {old feed id: the feed its members joined}."""
     rows = {source.source_id: source for source in sources or []}
     return dumps(
         {
@@ -280,6 +282,7 @@ def feeds_document(
             "attribution": ATTRIBUTION,
             "count": len(feeds),
             "feeds": [feed_entry(feed, statuses, contents, rows) for feed in feeds],
+            "moved": dict(sorted((moved or {}).items())),
         }
     )
 

@@ -19,7 +19,8 @@ Feed ids go in shareable URLs, so they are persisted and sticky: each group
 takes the id of the existing feed it shares the most members with, and a new id
 is minted only for a group that shares none. A feed that loses its group keeps
 its row, and its remaining members, for the retention window, so a group that
-comes back gets its old id.
+comes back gets its old id. A feed whose members joined another feed records
+that feed as ``moved_to``, so consumers can follow it.
 """
 
 import hashlib
@@ -335,13 +336,28 @@ def load_existing() -> dict[str, set[str]]:
     return existing
 
 
+def moved_to(members: dict[str, set[str]], feeds: list[Feed]) -> dict[str, str]:
+    """{feed id: the feed holding most of its members} for each id in
+    `members` that is not one of `feeds`. Ties go to the lower id."""
+    owner = {source_id: feed.feed_id for feed in feeds for source_id in feed.members}
+    current = {feed.feed_id for feed in feeds}
+    moved = {}
+    for feed_id, sources in members.items():
+        if feed_id in current:
+            continue
+        counts = Counter(owner[s] for s in sources if s in owner)
+        if counts:
+            moved[feed_id] = min(counts, key=lambda f: (-counts[f], f))
+    return moved
+
+
 def persist(feeds: list[Feed], now: datetime | None = None) -> None:
     """Upsert today's feeds and their members; mark the rest absent.
 
     A source belongs to one feed at a time, so a present source's old
     memberships are cleared before today's are written. An absent feed keeps
     only members no present feed has, which is what lets it be matched again
-    if they return.
+    if they return. A feed going absent records where its members went.
     """
     now = now or datetime.now(UTC)
     with get_session_factory()() as session, session.begin():
@@ -349,6 +365,17 @@ def persist(feeds: list[Feed], now: datetime | None = None) -> None:
             record.feed_id: record for record in session.scalars(select(FeedRecord))
         }
         current = {feed.feed_id for feed in feeds}
+        leaving: dict[str, set[str]] = defaultdict(set)
+        for feed_id, source_id in session.execute(
+            select(FeedMember.feed_id, FeedMember.source_id).where(
+                FeedMember.feed_id.in_(
+                    [f for f, r in records.items() if r.present and f not in current]
+                )
+            )
+        ):
+            leaving[feed_id].add(source_id)
+        for feed_id, target in moved_to(leaving, feeds).items():
+            records[feed_id].moved_to = target
         for feed in feeds:
             record = records.get(feed.feed_id)
             if record is None:
@@ -357,6 +384,7 @@ def persist(feeds: list[Feed], now: datetime | None = None) -> None:
             record.name = feed.name
             record.last_seen = now
             record.present = True
+            record.moved_to = None
         session.flush()
 
         session.execute(
@@ -381,6 +409,25 @@ def persist(feeds: list[Feed], now: datetime | None = None) -> None:
                 .where(FeedRecord.feed_id.in_(gone), FeedRecord.present)
                 .values(present=False)
             )
+
+
+def load_moved() -> dict[str, str]:
+    """{absent feed id: present feed id}, following moves to the last one."""
+    with get_session_factory()() as session:
+        rows = session.execute(
+            select(FeedRecord.feed_id, FeedRecord.moved_to, FeedRecord.present)
+        ).all()
+    present = {feed_id for feed_id, _, is_present in rows if is_present}
+    step = {feed_id: target for feed_id, target, _ in rows if target}
+    moved = {}
+    for feed_id in step:
+        target, seen = step[feed_id], {feed_id}
+        while target not in present and target in step and target not in seen:
+            seen.add(target)
+            target = step[target]
+        if target in present:
+            moved[feed_id] = target
+    return moved
 
 
 def build_feeds(

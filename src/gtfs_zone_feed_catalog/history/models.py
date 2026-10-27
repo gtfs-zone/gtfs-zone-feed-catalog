@@ -235,6 +235,8 @@ class FeedRecord(Base):
     # False once no current group maps to it. Kept, with its members, for the
     # retention window so a group that returns gets its old id back.
     present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # The present feed that took most of its members when it went absent.
+    moved_to: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (Index("ix_feed_present_last_seen", "present", "last_seen"),)
 
