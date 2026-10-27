@@ -19,6 +19,15 @@ def is_absolute(url: str) -> bool:
     return url.strip().lower().startswith(("http://", "https://"))
 
 
+def with_scheme(url: str) -> str:
+    """`url` with https:// in front when it names a host but no scheme, as some
+    Mobility Database producer URLs do (`example.org/gtfs.zip`)."""
+    host, slash, _ = url.partition("/")
+    if "://" in url or not slash or "." not in host or " " in host:
+        return url
+    return f"https://{url}"
+
+
 def normalize_url(url: str) -> str:
     """A comparison key for a download URL, or "" when there is nothing to compare.
 

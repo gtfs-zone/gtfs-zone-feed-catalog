@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from gtfs_zone_feed_catalog.urls import with_scheme
+
 Kind = Literal["static", "rt"]
 
 # Which URL roles belong to which kind. A static row carries exactly one URL; an
@@ -112,10 +114,11 @@ def make_rows(
     can produce both; the Mobility Database gives realtime its own mdb id, so
     it passes the kind suffix it wants in ``feed_id``.
     """
-    # Catalogs carry stray whitespace around URLs; httpx reads a leading space
-    # as a relative path.
+    # Catalogs carry stray whitespace around URLs, which httpx reads as a
+    # relative path, and some URLs without a scheme.
     scheduled, vehicles, trip_updates, alerts, realtime = (
-        u.strip() for u in (scheduled, vehicles, trip_updates, alerts, realtime)
+        with_scheme(u.strip())
+        for u in (scheduled, vehicles, trip_updates, alerts, realtime)
     )
     base = {
         "catalog": catalog,

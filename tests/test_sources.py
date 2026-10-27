@@ -2,7 +2,7 @@
 
 from gtfs_zone_feed_catalog.assets.sources import cross_link, merge
 from gtfs_zone_feed_catalog.catalog import Place, Source
-from gtfs_zone_feed_catalog.urls import normalize_url
+from gtfs_zone_feed_catalog.urls import normalize_url, with_scheme
 
 PLACE = Place(country_code="US", latitude=34.0, longitude=-118.0)
 
@@ -28,6 +28,19 @@ def md(url: str, place: Place = PLACE) -> Source:
         urls={"scheduled": url},
         place=place,
     )
+
+
+def test_with_scheme_adds_https_to_a_bare_host():
+    assert with_scheme("adelaidemetro.com.au/GTFS/google_transit.zip") == (
+        "https://adelaidemetro.com.au/GTFS/google_transit.zip"
+    )
+    assert with_scheme("86.109.125.18:88/gt/google_transit.zip") == (
+        "https://86.109.125.18:88/gt/google_transit.zip"
+    )
+    assert with_scheme("http://example.org/f.zip") == "http://example.org/f.zip"
+    assert with_scheme("gtfs.zip") == "gtfs.zip"
+    assert with_scheme("not a url") == "not a url"
+    assert with_scheme("") == ""
 
 
 def test_normalize_url_folds_case_default_ports_and_query_order():
