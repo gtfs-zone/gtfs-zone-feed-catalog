@@ -1,3 +1,10 @@
+## v0.5.1 (2026-10-27)
+
+### Fix
+
+- **catalog**: add https:// to URLs without a scheme
+- **deps**: upgrade packages with published security advisories
+
 ## v0.5.0 (2026-10-18)
 
 ### Feat
