@@ -27,7 +27,7 @@ from gtfs_zone_db_models.object_store import (
 from gtfs_zone_feed_catalog import artifacts, pages
 from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
-from gtfs_zone_feed_catalog.assets.feeds import Feed
+from gtfs_zone_feed_catalog.assets.feeds import Feed, load_moved
 from gtfs_zone_feed_catalog.catalog import Source
 from gtfs_zone_feed_catalog.heartbeat import push_heartbeat
 from gtfs_zone_feed_catalog.settings import settings
@@ -132,6 +132,7 @@ def publish(
     run_id: str,
     generated_at: datetime | None = None,
     contents: dict[str, FeedContent] | None = None,
+    moved: dict[str, str] | None = None,
 ) -> dict[str, int]:
     """Write every artifact, and return what a caller wants to report."""
     generated_at = generated_at or artifacts.utcnow()
@@ -140,7 +141,7 @@ def publish(
     documents = {
         "sources.json": artifacts.sources_document(sources, statuses, generated_at),
         "feeds.json": artifacts.feeds_document(
-            feeds, statuses, generated_at, contents, sources
+            feeds, statuses, generated_at, contents, sources, moved
         ),
         "search.json": artifacts.search_document(
             feeds, statuses, generated_at, contents, sources
@@ -243,6 +244,7 @@ def published_artifacts(
         check_history,
         context.run_id,
         contents=feed_contents,
+        moved=load_moved() if settings.database_url else {},
     )
     heartbeat = push_heartbeat(settings)
     context.add_output_metadata(
