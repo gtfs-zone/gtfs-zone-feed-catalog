@@ -69,6 +69,14 @@ def test_cross_link_pairs_the_catalogs_and_propagates_the_place():
     assert transitland.place.latitude == 34.0
 
 
+def test_cross_link_ignores_http_and_https():
+    transitland, _ = cross_link(
+        [tl("https://example.org/feed.zip"), md("http://example.org/feed.zip")]
+    )
+    assert transitland.same_endpoint_as == ("md:mdb-1:static",)
+    assert transitland.place.country_code == "US"
+
+
 def test_a_link_to_an_unplaced_row_leaves_the_row_unplaced():
     rows = cross_link(
         [tl("https://example.org/f.zip"), md("https://example.org/f.zip", Place())]

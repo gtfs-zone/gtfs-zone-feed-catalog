@@ -61,6 +61,14 @@ def normalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
+def link_key(url: str) -> str:
+    """A key for whether two catalogs list the same feed: `normalize_url` with
+    http and https unified, since catalogs move a URL to https at different
+    times. Only for linking rows; checks still tell the schemes apart."""
+    key = normalize_url(url)
+    return key.removeprefix("https://").removeprefix("http://")
+
+
 def host_of(url: str) -> str:
     """The host a request would hit, for per-host rate limiting.
 

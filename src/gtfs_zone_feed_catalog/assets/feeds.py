@@ -5,7 +5,7 @@ rows that describe the same system, so a consumer lists it once instead of once
 per catalog and once per realtime entity type. Rows join a feed through a
 union-find over four kinds of evidence, and nothing else:
 
-- a shared normalized URL, of any kind, in any catalog;
+- a shared URL (``urls.link_key``), of any kind, in any catalog;
 - a Mobility Database realtime row's ``feed_references`` to a static row;
 - realtime URLs that differ only in a final entity-type segment
   (``x/vehicles``, ``x/trips``, ``x/alerts``), see ``urls.rt_sibling_key``;
@@ -38,7 +38,7 @@ from gtfs_zone_feed_catalog.catalog import RT_ROLES, Place, Source
 from gtfs_zone_feed_catalog.database import get_session_factory
 from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord, SourceRecord
 from gtfs_zone_feed_catalog.settings import settings
-from gtfs_zone_feed_catalog.urls import normalize_url, rt_sibling_key
+from gtfs_zone_feed_catalog.urls import link_key, normalize_url, rt_sibling_key
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def group(rows: list[Source]) -> list[list[Source]]:
     for row in rows:
         links[("feed", row.catalog, row.feed_id)].append(row.source_id)
         for role, url in row.urls.items():
-            if key := normalize_url(url):
+            if key := link_key(url):
                 links[("url", key)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)
