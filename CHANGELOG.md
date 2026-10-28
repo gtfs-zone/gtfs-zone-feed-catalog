@@ -1,3 +1,13 @@
+## v0.6.0 (2026-10-28)
+
+### Feat
+
+- **feeds**: record the feed an absent feed's members joined and publish it as moved in feeds.json
+
+### Fix
+
+- **feeds**: group and cross-link rows whose URLs differ only in http/https
+
 ## v0.5.1 (2026-10-27)
 
 ### Fix
