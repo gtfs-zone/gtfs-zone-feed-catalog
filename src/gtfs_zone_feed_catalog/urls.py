@@ -64,9 +64,10 @@ def normalize_url(url: str) -> str:
 def link_key(url: str) -> str:
     """A key for whether two catalogs list the same feed: `normalize_url` with
     http and https unified, since catalogs move a URL to https at different
-    times. Only for linking rows; checks still tell the schemes apart."""
+    times, and a leading www. dropped, since a host and its www. name serve the
+    same feed. Only for linking rows; checks still tell them apart."""
     key = normalize_url(url)
-    return key.removeprefix("https://").removeprefix("http://")
+    return key.removeprefix("https://").removeprefix("http://").removeprefix("www.")
 
 
 def host_of(url: str) -> str:

@@ -3,9 +3,11 @@
 Catalog rows stay the raw layer (see ``sources``). A logical feed bundles the
 rows that describe the same system, so a consumer lists it once instead of once
 per catalog and once per realtime entity type. Rows join a feed through a
-union-find over four kinds of evidence, and nothing else:
+union-find over five kinds of evidence, and nothing else:
 
 - a shared URL (``urls.link_key``), of any kind, in any catalog;
+- byte-identical schedules: scheduled URLs whose last ok download had the same
+  sha256 in ``feed_contents``;
 - a Mobility Database realtime row's ``feed_references`` to a static row;
 - realtime URLs that differ only in a final entity-type segment
   (``x/vehicles``, ``x/trips``, ``x/alerts``), see ``urls.rt_sibling_key``;
@@ -26,8 +28,9 @@ that feed as ``moved_to``, so consumers can follow it.
 import hashlib
 import logging
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from dagster import asset
 from sqlalchemy import delete, insert, select, update
@@ -35,6 +38,7 @@ from sqlalchemy import delete, insert, select, update
 from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP
 from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult, result_key
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+from gtfs_zone_feed_catalog.assets.transitland_atlas import humanize_feed_id
 from gtfs_zone_feed_catalog.catalog import RT_ROLES, Place, Source
 from gtfs_zone_feed_catalog.database import get_session_factory
 from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord, SourceRecord
@@ -74,6 +78,12 @@ class Feed:
     subtitle: str = ""
 
 
+def _ok_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
+    """The sha256 of `url`'s last download when it was ok, else ""."""
+    content = (contents or {}).get(normalize_url(url) or url)
+    return content.sha256 if content and content.outcome == "ok" else ""
+
+
 class _UnionFind:
     def __init__(self, items: list[str]) -> None:
         self._parent = {item: item for item in items}
@@ -92,7 +102,9 @@ class _UnionFind:
             self._parent[root] = roots[0]
 
 
-def group(rows: list[Source]) -> list[list[Source]]:
+def group(
+    rows: list[Source], contents: dict[str, FeedContent] | None = None
+) -> list[list[Source]]:
     """Rows describing the same system, each group sorted by source id."""
     by_id = {row.source_id: row for row in rows}
     links: dict[tuple[str, ...], list[str]] = defaultdict(list)
@@ -102,6 +114,8 @@ def group(rows: list[Source]) -> list[list[Source]]:
         for role, url in row.urls.items():
             if key := link_key(url):
                 links[("url", key)].append(row.source_id)
+            if role == "scheduled" and (sha := _ok_sha256(url, contents)):
+                links[("sha", sha)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)
         if row.catalog == "mobilitydatabase":
@@ -234,11 +248,67 @@ def feed_name(rows: list[Source], content: FeedContent | None = None) -> str:
 
 
 def feed_subtitle(rows: list[Source], name: str) -> str:
-    """The Mobility Database feed_name under a provider the feed is named for."""
+    """A Mobility Database feed_name, from a provider the feed is named for
+    first, then from any provider."""
     ordered = sorted(rows, key=lambda row: (row.kind != "static", row.source_id))
+    ordered.sort(key=lambda row: _provider(row) != name)
+    return next((sub for r in ordered if (sub := _feed_name(r))), "")
+
+
+def _url_stem(url: str) -> str:
+    """The last path segment of `url` without its extension."""
+    try:
+        segment = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    except ValueError:
+        return ""
+    return segment.rsplit(".", 1)[0] if "." in segment else segment
+
+
+def fallback_subtitle(
+    feed: Feed, rows: list[Source], content: FeedContent | None
+) -> str:
+    """A subtitle for a feed whose name another feed shares: the schedule's own
+    agency, a Transitland feed id, then the schedule URL's file name. Any that
+    only repeats the name is skipped."""
+    ordered = sorted(rows, key=lambda row: (row.kind != "static", row.source_id))
+    candidates = [
+        content_agency(content),
+        *(humanize_feed_id(r.feed_id) for r in ordered if r.catalog == "transitland"),
+        *(_url_stem(url) for url in feed.urls.get("scheduled", ())),
+    ]
+    taken = feed.name.strip().casefold()
     return next(
-        (sub for r in ordered if _provider(r) == name and (sub := _feed_name(r))), ""
+        (c.strip() for c in candidates if c.strip() and c.strip().casefold() != taken),
+        "",
     )
+
+
+def _content(feed: Feed, contents: dict[str, FeedContent] | None) -> FeedContent | None:
+    """The content of the feed's best scheduled URL that has one."""
+    return next(
+        (
+            found
+            for url in feed.urls.get("scheduled", ())
+            if (found := (contents or {}).get(normalize_url(url) or url))
+        ),
+        None,
+    )
+
+
+def tell_apart(
+    feeds: list[Feed],
+    groups: list[list[Source]],
+    contents: dict[str, FeedContent] | None = None,
+) -> list[Feed]:
+    """`feeds` with a fallback subtitle on each one without a subtitle whose
+    name another feed also has with none."""
+    shared = Counter((feed.name, feed.subtitle) for feed in feeds)
+    return [
+        replace(feed, subtitle=fallback_subtitle(feed, rows, _content(feed, contents)))
+        if not feed.subtitle and shared[(feed.name, "")] > 1
+        else feed
+        for feed, rows in zip(feeds, groups, strict=True)
+    ]
 
 
 def build_feed(
@@ -436,15 +506,13 @@ def build_feeds(
     existing: dict[str, set[str]],
     contents: dict[str, FeedContent] | None = None,
 ) -> list[Feed]:
-    groups = group(rows)
+    groups = group(rows, contents)
     ids = assign_ids([[row.source_id for row in g] for g in groups], existing)
-    return sorted(
-        (
-            build_feed(feed_id, g, results, contents)
-            for feed_id, g in zip(ids, groups, strict=True)
-        ),
-        key=lambda feed: feed.feed_id,
-    )
+    built = [
+        build_feed(feed_id, g, results, contents)
+        for feed_id, g in zip(ids, groups, strict=True)
+    ]
+    return sorted(tell_apart(built, groups, contents), key=lambda feed: feed.feed_id)
 
 
 @asset(
