@@ -119,6 +119,55 @@ def test_catalogs_listing_a_url_as_http_and_https_are_one_feed():
     assert len(group(rows)) == 1
 
 
+def test_catalogs_listing_a_url_with_and_without_www_are_one_feed():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://www.a.org/g.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    assert len(group(rows)) == 1
+
+
+def content(url: str, sha256: str = "", outcome: str = "ok", **facts) -> FeedContent:
+    return FeedContent(
+        url=url,
+        outcome=outcome,
+        checked=NOW.date(),
+        since=NOW.date(),
+        sha256=sha256,
+        facts=facts,
+    )
+
+
+def test_byte_identical_schedules_at_different_urls_are_one_feed():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://s3.example.org/a.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    same = {
+        "https://s3.example.org/a.zip": content("https://s3.example.org/a.zip", "ab"),
+        "http://a.org/g.zip": content("http://a.org/g.zip", "ab"),
+    }
+    assert len(group(rows, same)) == 1
+    assert len(group(rows)) == 2
+
+
+def test_failed_or_unhashed_downloads_do_not_link():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://s3.example.org/a.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    failed_both = {
+        url: content(url, "ab", outcome="not_zip")
+        for url in ("https://s3.example.org/a.zip", "http://a.org/g.zip")
+    }
+    unhashed = {
+        url: content(url)
+        for url in ("https://s3.example.org/a.zip", "http://a.org/g.zip")
+    }
+    assert len(group(rows, failed_both)) == 2
+    assert len(group(rows, unhashed)) == 2
+
+
 def test_two_feeds_joined_again_take_the_lower_id():
     existing = {"f-b": {"md:mdb-1:static"}, "f-a": {"tl:f-a:static"}}
     assert assign_ids([["md:mdb-1:static", "tl:f-a:static"]], existing) == ["f-a"]
@@ -359,3 +408,65 @@ def test_a_feed_merged_into_another_is_moved_to_it(session_factory):
     persist([merged])
     loser = ({*ids.values()} - {merged.feed_id}).pop()
     assert load_moved() == {loser: merged.feed_id}
+
+
+def test_a_feed_named_for_its_operator_keeps_the_providers_subtitle():
+    tl = replace(
+        row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip"),
+        name="MTA",
+        operator_name="MTA",
+    )
+    md = replace(
+        row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip"),
+        name="Metropolitan Transit Authority (Brooklyn Bus)",
+        operator_name="Metropolitan Transit Authority",
+    )
+    (feed,) = build_feeds([tl, md], {}, {})
+    assert (feed.name, feed.subtitle) == ("MTA", "Brooklyn Bus")
+
+
+def test_feeds_sharing_a_name_get_fallback_subtitles():
+    def operated(feed_id: str, url: str) -> Source:
+        return replace(
+            row(f"tl:{feed_id}:static", kind="static", scheduled=url),
+            name="MTA",
+            operator_name="MTA",
+        )
+
+    brooklyn = operated("f-dr5r-mtanyctbusbrooklyn", "https://s3.example.org/b.zip")
+    bronx = operated("f-dr72-mtanyctbusbronx", "https://s3.example.org/bx.zip")
+    other = replace(
+        row("md:mdb-9:static", kind="static", scheduled="https://o.org/g.zip"),
+        name="Other",
+        operator_name="Other",
+    )
+    feeds = {
+        f.urls["scheduled"][0]: f for f in build_feeds([brooklyn, bronx, other], {}, {})
+    }
+    assert feeds["https://s3.example.org/b.zip"].subtitle == "mtanyctbusbrooklyn"
+    assert feeds["https://s3.example.org/bx.zip"].subtitle == "mtanyctbusbronx"
+    assert feeds["https://o.org/g.zip"].subtitle == ""
+
+
+def test_a_fallback_subtitle_prefers_the_schedules_agency_then_the_file_name():
+    a = replace(
+        row("md:mdb-1:static", kind="static", scheduled="https://a.org/east.zip"),
+        name="Metro",
+        operator_name="Metro",
+    )
+    b = replace(
+        row("md:mdb-2:static", kind="static", scheduled="https://a.org/west.zip"),
+        name="Metro",
+        operator_name="Metro",
+    )
+    contents = {
+        "https://a.org/east.zip": content(
+            "https://a.org/east.zip", agencies=[{"name": "Metro East"}]
+        ),
+        "https://a.org/west.zip": content(
+            "https://a.org/west.zip", agencies=[{"name": "Metro"}]
+        ),
+    }
+    feeds = {f.urls["scheduled"][0]: f for f in build_feeds([a, b], {}, {}, contents)}
+    assert feeds["https://a.org/east.zip"].subtitle == "Metro East"
+    assert feeds["https://a.org/west.zip"].subtitle == "west"
