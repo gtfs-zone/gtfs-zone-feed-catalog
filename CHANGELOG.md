@@ -1,3 +1,13 @@
+## v0.7.0 (2026-10-31)
+
+### Feat
+
+- **feeds**: group byte-identical schedules and subtitle feeds that share a name
+
+### Fix
+
+- **feeds**: group rows whose URLs differ only by a leading www.
+
 ## v0.6.0 (2026-10-28)
 
 ### Feat
