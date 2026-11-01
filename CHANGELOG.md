@@ -1,3 +1,9 @@
+## v0.7.1 (2026-11-01)
+
+### Fix
+
+- **feeds**: pair Transitland realtime feeds with their operator's only schedule
+
 ## v0.7.0 (2026-10-31)
 
 ### Feat
