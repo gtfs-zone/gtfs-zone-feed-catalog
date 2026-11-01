@@ -5,7 +5,11 @@ that is easy to get wrong. The operator index is built in two passes over the
 *whole* corpus, because a feed almost never declares ``operators[]`` - the link
 runs the other way, from ``operator.associated_feeds[].feed_onestop_id`` back
 to the feed, and usually from a different file than the feed lives in. A
-per-file index resolves almost nothing.
+per-file index resolves almost nothing. Operators nested in a feed's
+``operators[]`` count too, with their own ``associated_feeds``.
+
+The same operator links pair a realtime feed with its schedule: an rt row's
+``feed_references`` names the one static feed its operators agree on.
 
 A local checkout is preferred when one is configured: it is ~730 files, and
 fetching them one at a time from GitHub is both slow and rude. The cluster has
@@ -18,6 +22,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -65,6 +70,27 @@ def humanize_feed_id(feed_id: str) -> str:
     return "-".join(segments).replace("~", " ").replace("_", " ").strip()
 
 
+def _operators(dmfr: dict) -> list[tuple[dict, str | None]]:
+    """Every operator in a document with the feed it is nested in, if any.
+
+    Top-level operators come first, so they claim a feed before nested ones.
+    """
+    found: list[tuple[dict, str | None]] = [
+        (op, None) for op in dmfr.get("operators") or []
+    ]
+    for feed in dmfr.get("feeds") or []:
+        found += [(op, feed.get("id")) for op in feed.get("operators") or []]
+    return found
+
+
+def _associated(op: dict) -> list[str]:
+    return [
+        feed_id
+        for assoc in op.get("associated_feeds") or []
+        if (feed_id := assoc.get("feed_onestop_id"))
+    ]
+
+
 def build_operator_index(docs: Iterable[tuple[str, dict]]) -> dict[str, dict]:
     """Operator per feed onestop id, resolved across the whole corpus."""
     docs = list(docs)
@@ -72,14 +98,15 @@ def build_operator_index(docs: Iterable[tuple[str, dict]]) -> dict[str, dict]:
     by_feed_id: dict[str, dict] = {}
 
     for _origin, dmfr in docs:
-        for op in dmfr.get("operators") or []:
-            if onestop_id := op.get("onestop_id"):
+        for op, _parent in _operators(dmfr):
+            # A bare reference ({"onestop_id": ...}) does not replace a full one.
+            if (onestop_id := op.get("onestop_id")) and (
+                onestop_id not in by_onestop_id or len(op) > 1
+            ):
                 by_onestop_id[onestop_id] = op
-            for assoc in op.get("associated_feeds") or []:
-                feed_onestop_id = assoc.get("feed_onestop_id")
+            for feed_onestop_id in _associated(op):
                 # First operator to claim a feed wins; later files do not clobber.
-                if feed_onestop_id and feed_onestop_id not in by_feed_id:
-                    by_feed_id[feed_onestop_id] = op
+                by_feed_id.setdefault(feed_onestop_id, op)
 
     # Second pass for the minority of feeds that do declare operators[].
     for _origin, dmfr in docs:
@@ -95,9 +122,46 @@ def build_operator_index(docs: Iterable[tuple[str, dict]]) -> dict[str, dict]:
     return by_feed_id
 
 
+def build_static_references(docs: Iterable[tuple[str, dict]]) -> dict[str, str]:
+    """The schedule each realtime feed describes, by onestop id.
+
+    An operator's feeds are its ``associated_feeds`` plus the feed it is nested
+    in, gathered across the corpus. Only an operator with exactly one schedule
+    names one, since a second is usually a regional aggregate; and a realtime
+    feed whose operators name different schedules gets none.
+    """
+    docs = list(docs)
+    specs: dict[str, str] = {}
+    feeds_by_operator: dict[str, set[str]] = {}
+
+    for _origin, dmfr in docs:
+        for feed in dmfr.get("feeds") or []:
+            if feed_id := feed.get("id"):
+                specs.setdefault(feed_id, feed.get("spec", "gtfs"))
+        for op, parent in _operators(dmfr):
+            if not (onestop_id := op.get("onestop_id")):
+                continue
+            members = feeds_by_operator.setdefault(onestop_id, set())
+            members.update(_associated(op))
+            if parent:
+                members.add(parent)
+
+    targets: dict[str, set[str]] = {}
+    for members in feeds_by_operator.values():
+        schedules = [f for f in members if specs.get(f) == "gtfs"]
+        if len(schedules) != 1:
+            continue
+        for feed_id in members:
+            if specs.get(feed_id) == "gtfs-rt":
+                targets.setdefault(feed_id, set()).add(schedules[0])
+
+    return {rt: next(iter(s)) for rt, s in targets.items() if len(s) == 1}
+
+
 def build_sources(docs: Iterable[tuple[str, dict]]) -> list[Source]:
     docs = list(docs)
     operators_by_feed_id = build_operator_index(docs)
+    static_by_rt = build_static_references(docs)
     rows: list[Source] = []
     seen: set[str] = set()
 
@@ -130,6 +194,8 @@ def build_sources(docs: Iterable[tuple[str, dict]]) -> list[Source]:
                 if row.source_id in seen:
                     continue
                 seen.add(row.source_id)
+                if row.kind == "rt" and (target := static_by_rt.get(feed_id)):
+                    row = replace(row, feed_references=(target,))
                 rows.append(row)
 
     rows.sort(key=lambda r: r.source_id)

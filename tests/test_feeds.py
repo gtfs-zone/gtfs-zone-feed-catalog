@@ -102,6 +102,20 @@ def test_mdb_static_and_rt_linked_by_feed_references_become_one_feed():
     ]
 
 
+def test_transitland_static_and_rt_linked_by_feed_references_become_one_feed():
+    static = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
+    rt = replace(
+        row("tl:f-a~rt:rt", vehicles="https://b.org/vp"), feed_references=("f-a",)
+    )
+    dangling = replace(
+        row("tl:f-c~rt:rt", vehicles="https://c.org/vp"), feed_references=("f-c",)
+    )
+    assert ids(group([static, rt, dangling])) == [
+        ["tl:f-a:static", "tl:f-a~rt:rt"],
+        ["tl:f-c~rt:rt"],
+    ]
+
+
 def test_catalogs_sharing_a_url_and_one_feed_split_in_two_are_one_feed():
     rows = [
         row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip"),

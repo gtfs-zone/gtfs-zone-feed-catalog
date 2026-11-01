@@ -8,14 +8,16 @@ union-find over five kinds of evidence, and nothing else:
 - a shared URL (``urls.link_key``), of any kind, in any catalog;
 - byte-identical schedules: scheduled URLs whose last ok download had the same
   sha256 in ``feed_contents``;
-- a Mobility Database realtime row's ``feed_references`` to a static row;
+- a realtime row's ``feed_references`` to a static row of its catalog: a
+  Mobility Database reference, or a Transitland operator's only schedule;
 - realtime URLs that differ only in a final entity-type segment
   (``x/vehicles``, ``x/trips``, ``x/alerts``), see ``urls.rt_sibling_key``;
 - the static and realtime rows one catalog feed was split into.
 
 No fuzzy name matching and, for now, no override file, so a wrong link cannot be
 undone except by changing the rules. The groups can false-merge: one regional
-schedule referenced by several agencies' realtime feeds makes them one feed.
+schedule referenced by several agencies' realtime feeds makes them one feed,
+whether by MDB reference or by being each Transitland operator's only schedule.
 
 Feed ids go in shareable URLs, so they are persisted and sticky: each group
 takes the id of the existing feed it shares the most members with, and a new id
@@ -49,6 +51,9 @@ log = logging.getLogger(__name__)
 
 # A feed whose schedule answers but some realtime role does not.
 PARTIAL = "partial"
+
+# Source id prefix of the static rows each catalog's feed_references name.
+REFERENCE_PREFIXES = {"mobilitydatabase": "md", "transitland": "tl"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,10 +123,10 @@ def group(
                 links[("sha", sha)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)
-        if row.catalog == "mobilitydatabase":
-            for ref in row.feed_references:
-                if (target := f"md:{ref}:static") in by_id:
-                    links[("ref", row.source_id, ref)] += [row.source_id, target]
+        prefix = REFERENCE_PREFIXES.get(row.catalog)
+        for ref in row.feed_references if prefix else ():
+            if (target := f"{prefix}:{ref}:static") in by_id:
+                links[("ref", row.source_id, ref)] += [row.source_id, target]
 
     union = _UnionFind(list(by_id))
     for members in links.values():

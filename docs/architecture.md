@@ -56,10 +56,15 @@ only when every checkable URL answers); each consumer applies its own rule.
 ## Logical feeds
 
 Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
-joins rows on exactly four kinds of evidence:
+joins rows on exactly six kinds of evidence:
 
 - a shared URL (http and https unified), any kind, any catalog;
+- byte-identical schedules: scheduled URLs whose last ok download had the
+  same sha256;
 - an MDB realtime row's `feed_references` to an MDB static row;
+- a Transitland realtime feed to its operator's schedule, when the operator
+  (top-level or nested in a feed) has exactly one schedule and every operator
+  of the realtime feed names the same one;
 - realtime URLs on the same host and path differing only in a final
   `vehicles`/`vehiclepositions`/`trips`/`tripupdates`/`alerts`/`servicealerts`
   segment (case, `_`/`-` and extension ignored; the query must match);
@@ -67,8 +72,9 @@ joins rows on exactly four kinds of evidence:
 
 No fuzzy name matching and no override file yet, so the rules **can
 false-merge** (a regional schedule that several agencies' realtime feeds all
-reference makes them one feed; PTV's nested-zip feeds sharing one download are
-one feed) and a wrong link can only be undone by changing the rules. Names:
+reference makes them one feed, as does a regional schedule that is several
+Transitland operators' only one; PTV's nested-zip feeds sharing one download
+are one feed) and a wrong link can only be undone by changing the rules. Names:
 a Transitland operator, then a Mobility Database provider (its feed_name
 becomes the feed's `subtitle`), then the schedule's own single agency or
 publisher from the content report, then an NTD agency, then any row's name. Coordinates: any
