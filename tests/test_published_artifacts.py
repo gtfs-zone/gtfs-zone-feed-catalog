@@ -1,19 +1,17 @@
-"""Publishing against moto: what lands in the bucket, and what does not."""
+"""Publishing to an in-memory store: what lands in the bucket, and what does not."""
 
 import gzip
 import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from gtfs_zone_db_models.object_store import ObjectNotFound, ObjectStoreSettings
+from gtfs_zone_db_models.object_store import ObjectNotFound
 
 from gtfs_zone_feed_catalog import artifacts
-from gtfs_zone_feed_catalog.assets.bucket_cors import ALLOWED_ORIGINS, set_cors
 from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
 from gtfs_zone_feed_catalog.assets.feeds import build_feeds
 from gtfs_zone_feed_catalog.assets.published_artifacts import publish
 from gtfs_zone_feed_catalog.catalog import Source
-from tests.conftest import BUCKET, ENDPOINT
 
 DAY_ONE = datetime(2026, 9, 20, 6, 0, tzinfo=UTC)
 
@@ -115,24 +113,3 @@ def test_snapshot_retention_deletes_the_objects_it_drops(store, monkeypatch):
         - {artifacts.SNAPSHOT_INDEX_KEY}
         == kept
     )
-
-
-def test_cors_is_set_on_the_bucket(store):
-    settings = ObjectStoreSettings(
-        s3_endpoint=ENDPOINT,
-        s3_bucket=BUCKET,
-        s3_access_key="key",
-        s3_secret_key="secret",
-        s3_region="us-east-1",
-    )
-    set_cors(settings)
-    # Idempotent: the daily run sets it every time.
-    set_cors(settings)
-
-    import boto3
-
-    client = boto3.client("s3", endpoint_url=ENDPOINT, region_name="us-east-1")
-    rules = client.get_bucket_cors(Bucket=BUCKET)["CORSRules"]
-    # One origin per rule, so Garage never sends a multi-origin header.
-    assert [r["AllowedOrigins"] for r in rules] == [[o] for o in ALLOWED_ORIGINS]
-    assert all(r["AllowedMethods"] == ["GET", "HEAD"] for r in rules)

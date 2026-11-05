@@ -63,4 +63,4 @@ pre-commit install   # install git hooks (run once after clone)
 ```
 
 Tests run against no services: `respx` for the catalog APIs and the endpoint
-checks, `moto` for the bucket, SQLite for the history tables.
+checks, obstore's `MemoryStore` for the bucket, SQLite for the history tables.

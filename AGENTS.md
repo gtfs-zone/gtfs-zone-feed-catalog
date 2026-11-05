@@ -40,8 +40,8 @@ grouping and env vars are in [docs/architecture.md](docs/architecture.md).
   names is imported at runtime, never under `TYPE_CHECKING`, and a module
   annotating `context` must not use `from __future__ import annotations`.
 - `assets/__init__.py` stays empty: re-exports shadow the submodule names.
-- Tests run against no services: `respx` for HTTP, `moto` for the bucket,
-  SQLite with `StaticPool`. A migration touching history tables is also tried
+- Tests run against no services: `respx` for HTTP, obstore's `MemoryStore` for
+  the bucket, SQLite with `StaticPool`. A migration touching history tables is also tried
   against a `pg_dump -t` copy of the live tables (SQLite cannot
   `ALTER COLUMN ... TYPE`; the tests stamp past `7c2e5a1d9b30`).
 

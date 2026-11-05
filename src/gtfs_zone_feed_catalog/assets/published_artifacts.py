@@ -226,8 +226,6 @@ def publish(
         "sources, feeds, search, status, summary, snapshot, manifest, "
         "feed pages and sitemap"
     ),
-    # Ordering only: the CORS rule is in place before anything is published.
-    deps=["bucket_cors"],
 )
 def published_artifacts(
     context: AssetExecutionContext,

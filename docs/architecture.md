@@ -17,7 +17,6 @@ order:
 | `feed_contents` | Read timetable-sites's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
 | `history_retention` | Delete old `endpoint_state` and `endpoint_content_state` rows, and absent sources, endpoints and feeds, past their window |
-| `bucket_cors` | Idempotent CORS rule on the public bucket, set over S3 because Garage's admin API cannot |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
 ## Artifacts

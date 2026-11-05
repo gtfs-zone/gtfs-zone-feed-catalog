@@ -1,16 +1,15 @@
 """Fixtures for a suite that needs no running service.
 
-SQLite with StaticPool for the history tables, moto for the bucket, respx for
-every HTTP call. Nothing here talks to Postgres, Garage, GitHub or either
-catalog.
+SQLite with StaticPool for the history tables, obstore's MemoryStore for the
+bucket, respx for every HTTP call. Nothing here talks to Postgres, Garage,
+GitHub or either catalog.
 """
 
 from __future__ import annotations
 
-import boto3
 import pytest
 from gtfs_zone_db_models.object_store import ObjectStore, ObjectStoreSettings
-from moto import mock_aws
+from obstore.store import MemoryStore
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -23,9 +22,6 @@ from gtfs_zone_feed_catalog.history.models import Base
 from gtfs_zone_feed_catalog.settings import settings
 
 BUCKET = "test-artifacts"
-# Deliberately not an AWS hostname: the store points at Garage, and moto only
-# intercepts a custom endpoint when told which one.
-ENDPOINT = "http://s3.local"
 
 
 @pytest.fixture
@@ -62,19 +58,8 @@ def session_factory(monkeypatch):
 
 
 @pytest.fixture
-def store(monkeypatch):
-    monkeypatch.setenv("MOTO_S3_CUSTOM_ENDPOINTS", ENDPOINT)
-    with mock_aws():
-        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
-        yield ObjectStore(
-            ObjectStoreSettings(
-                s3_endpoint=ENDPOINT,
-                s3_bucket=BUCKET,
-                s3_access_key="key",
-                s3_secret_key="secret",
-                s3_region="us-east-1",
-            )
-        )
+def store():
+    return ObjectStore(ObjectStoreSettings(s3_bucket=BUCKET), store=MemoryStore())
 
 
 @pytest.fixture
