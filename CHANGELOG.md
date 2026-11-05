@@ -1,3 +1,9 @@
+## v0.8.0 (2026-11-05)
+
+### Feat
+
+- db-models v0.3.0 over obstore, drop boto3 and the bucket_cors asset
+
 ## v0.7.1 (2026-11-01)
 
 ### Fix
