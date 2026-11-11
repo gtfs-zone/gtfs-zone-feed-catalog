@@ -4,6 +4,7 @@ import gzip
 import json
 from datetime import UTC, datetime, timedelta
 
+import obstore
 import pytest
 from gtfs_zone_db_models.object_store import ObjectNotFound
 
@@ -62,6 +63,17 @@ def test_a_first_run_writes_every_artifact(store):
 
     snapshot = json.loads(gzip.decompress(store.get("snapshots/2026-09-20.json.gz")))
     assert snapshot["sources"]["tl:f-a:static"]["state"] == "up"
+
+
+def test_every_published_object_carries_the_cache_control(store):
+    publish(store, ROWS, FEEDS, UP, "run-1", DAY_ONE)
+
+    keys = [meta["path"] for meta in obstore.list(store.store).collect()]
+    assert "manifest.json" in keys
+    assert "sitemap.xml" in keys
+    for key in keys:
+        attributes = obstore.get(store.store, key).attributes
+        assert attributes["Cache-Control"] == artifacts.ARTIFACT_CACHE_CONTROL, key
 
 
 def test_an_unchanged_day_writes_no_second_snapshot(store):

@@ -85,11 +85,13 @@ def publish_pages(
                 f"{prefix}head.html",
                 head.encode(),
                 content_type=pages.PAGE_CONTENT_TYPE,
+                cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
             )
             store.put(
                 f"{prefix}body.html",
                 body.encode(),
                 content_type=pages.PAGE_CONTENT_TYPE,
+                cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
             )
             written += 1
         index[feed.feed_id] = entry
@@ -102,6 +104,7 @@ def publish_pages(
         pages.PAGES_INDEX_KEY,
         artifacts.dumps({"pages": index}),
         content_type=artifacts.ARTIFACT_CONTENT_TYPE,
+        cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
     )
     indexed = sorted(
         (entry["url"], entry["lastmod"]) for entry in index.values() if entry["indexed"]
@@ -110,6 +113,7 @@ def publish_pages(
         pages.SITEMAP_KEY,
         pages.sitemap(indexed),
         content_type=pages.SITEMAP_CONTENT_TYPE,
+        cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
     )
     log.info(
         "pages: %d written, %d removed, %d in the sitemap",
@@ -152,7 +156,12 @@ def publish(
         ),
     }
     for key, body in documents.items():
-        store.put(key, body, content_type=artifacts.ARTIFACT_CONTENT_TYPE)
+        store.put(
+            key,
+            body,
+            content_type=artifacts.ARTIFACT_CONTENT_TYPE,
+            cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
+        )
     log.info("wrote %d artifacts to %s", len(documents), store.bucket)
 
     page_counts = publish_pages(store, sources, feeds, statuses, generated_at, contents)
@@ -170,7 +179,12 @@ def publish(
     else:
         key = artifacts.snapshot_key(today)
         body = artifacts.snapshot_body(payload, generated_at)
-        store.put(key, body, content_type=artifacts.SNAPSHOT_CONTENT_TYPE)
+        store.put(
+            key,
+            body,
+            content_type=artifacts.SNAPSHOT_CONTENT_TYPE,
+            cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
+        )
         index = [entry for entry in index if entry["date"] != today.isoformat()]
         index.append(
             {
@@ -201,6 +215,7 @@ def publish(
         artifacts.SNAPSHOT_INDEX_KEY,
         index_body,
         content_type=artifacts.ARTIFACT_CONTENT_TYPE,
+        cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
     )
 
     # Last, on purpose: the manifest is what a consumer polls, so it must never
@@ -208,7 +223,12 @@ def publish(
     manifest = artifacts.manifest_document(
         documents | {artifacts.SNAPSHOT_INDEX_KEY: index_body}, generated_at, run_id
     )
-    store.put("manifest.json", manifest, content_type=artifacts.ARTIFACT_CONTENT_TYPE)
+    store.put(
+        "manifest.json",
+        manifest,
+        content_type=artifacts.ARTIFACT_CONTENT_TYPE,
+        cache_control=artifacts.ARTIFACT_CACHE_CONTROL,
+    )
 
     return {
         "sources": len(sources),

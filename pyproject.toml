@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git", tag = "v0.3.0" }
+gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git", tag = "v0.4.0" }
 
 [dependency-groups]
 dev = [

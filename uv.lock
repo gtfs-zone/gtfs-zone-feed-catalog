@@ -624,8 +624,8 @@ wheels = [
 
 [[package]]
 name = "gtfs-zone-db-models"
-version = "0.3.0"
-source = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.3.0#bf6248a90b90b2a6d0abd4842a19b8ac1cfb6010" }
+version = "0.4.0"
+source = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.4.0#78817bfeebba21247f45f372fb6c8fc63b68cbc3" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
@@ -673,7 +673,7 @@ requires-dist = [
     { name = "dagster", specifier = ">=1.9" },
     { name = "dagster-postgres", specifier = ">=0.25" },
     { name = "dagster-webserver", specifier = ">=1.9" },
-    { name = "gtfs-zone-db-models", git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.3.0" },
+    { name = "gtfs-zone-db-models", git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.4.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },

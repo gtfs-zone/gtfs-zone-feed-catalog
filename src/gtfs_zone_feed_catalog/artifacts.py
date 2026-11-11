@@ -35,6 +35,10 @@ if TYPE_CHECKING:
 
 ARTIFACT_CONTENT_TYPE = "application/json"
 SNAPSHOT_CONTENT_TYPE = "application/gzip"
+# Sent with every published object. Bounds how long the CDN and browsers keep
+# serving a file after a run replaces it; conditional requests make an expired
+# but unchanged copy a 304.
+ARTIFACT_CACHE_CONTROL = "public, max-age=600"
 SNAPSHOT_PREFIX = "snapshots/"
 SNAPSHOT_INDEX_KEY = "snapshots/index.json"
 TRANSITLAND_FEED_BASE = "https://www.transit.land/feeds/"
