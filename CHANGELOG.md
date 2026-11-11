@@ -1,3 +1,9 @@
+## v0.9.0 (2026-11-12)
+
+### Feat
+
+- **published-artifacts**: send Cache-Control with every object
+
 ## v0.8.0 (2026-11-05)
 
 ### Feat
