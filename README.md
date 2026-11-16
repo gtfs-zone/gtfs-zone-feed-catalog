@@ -15,8 +15,10 @@ liveness signal. This replaces that: one pipeline produces `sources.json`,
 `feeds.json`, `search.json`, `status.json`, `summary.json` and a `manifest.json` consumers
 poll to decide whether to refetch, plus deduplicated dated snapshots.
 
-Reachability is checked with a HEAD request, falling back to a ranged GET when
-the origin rejects HEAD. No feed bodies are downloaded or stored.
+Every schedule is downloaded once a day with a conditional GET, and the latest
+body per URL is kept in a private bucket for the apps that read schedules; that
+GET is also the URL's check. Realtime URLs are checked with a HEAD request,
+falling back to a ranged GET when the origin rejects HEAD.
 
 `feed-list` (`list.gtfs.zone`) is the frontend for these artifacts.
 

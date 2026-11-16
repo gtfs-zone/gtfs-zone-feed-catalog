@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Dagster pipeline that inventories the world of GTFS: it ingests the Transitland
-Atlas, the Mobility Database and the NTD GTFS weblinks daily, checks every feed endpoint, keeps history
+Atlas, the Mobility Database and the NTD GTFS weblinks daily, downloads every
+schedule once, checks every feed endpoint, keeps history
 in Postgres, and publishes JSON artifacts to a Garage bucket served at
 `data.gtfs.zone`. A `v*` tag publishes the image.
 
@@ -31,7 +32,9 @@ grouping and env vars are in [docs/architecture.md](docs/architecture.md).
   the NTD is credited to the Federal Transit Administration.
 - **Polite checks**: bounded concurrency, one request at a time per host, a
   delay between them and an honest User-Agent. Keep it that way.
-- **Retention is load-bearing**: one 40Gi Garage volume holds every snapshot.
+- **Retention is load-bearing**: one 40Gi Garage volume holds every snapshot
+  and the latest body of every schedule (`feed_fetch`, private `gtfs-zips`
+  bucket, about 15.5 GB). Schedule bodies never go in the public bucket.
 - `DAGSTER_HOME` must be a directory the image owns (`/app/dagster_home`); the
   process runs as `bridge` and `/app` is root-owned.
 - The Mobility Database refresh token lives in `.env` and the cluster's

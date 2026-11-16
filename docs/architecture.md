@@ -12,11 +12,12 @@ order:
 | `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
 | `ntd` | FTA's NTD GTFS weblinks over SODA3 (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by URL with http and https unified |
-| `endpoint_checks` | HEAD (ranged GET on fallback) every download URL; size (static only), `Last-Modified`, `ETag` |
+| `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
+| `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
 | `feed_contents` | Read timetable-sites's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
-| `history_retention` | Delete old `endpoint_state` and `endpoint_content_state` rows, and absent sources, endpoints and feeds, past their window |
+| `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
 ## Artifacts
@@ -51,6 +52,27 @@ checked. Catalog rows (`source`, linked by `source_endpoint`) and logical feeds
 row is up when all its URLs answer. A feed has a per-role state (up when any
 URL for that role answers, so a consumer can load it) and an overall state (up
 only when every checkable URL answers); each consumer applies its own rule.
+
+`endpoint.sha256` is the last body `feed_fetch` downloaded, and
+`endpoint_version` holds one row per change of it, so a schedule republished
+daily with the same bytes adds nothing.
+
+## Schedule store
+
+`feed_fetch` keeps the latest body of every static URL in a private Garage
+bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
+
+| Key | Contents |
+|---|---|
+| `gtfs/<sha256>.zip` | A zip body, stored once however many URLs serve it |
+| `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
+| `gtfs/index.json` | `generated`, `maxBytes`, and `urls`: normalized URL to `url` (as requested), `checked`, `outcome` (`ok`, `not_modified`, `too_large`, `http_error`, `error`), `status`, `key` (the stored object, `""` when none), `sha256`, `bytes`, `kind` (`zip`, `html`, `json`, `xml`, `empty`, `unknown`), `contentType`, `etag`, `lastModified` (header values as received), `fetched` (last download), `since` (last sha256 change) |
+
+The request is a conditional GET with the stored body's validators; a 304 or a
+failure keeps the stored body. A body over `FETCH_MAX_BYTES` is abandoned after
+the headers and nothing is stored for it. The index is written after the
+uploads, then every object it does not reference is deleted: only the latest
+body per URL is kept, and a URL no catalog lists loses its object.
 
 ## Logical feeds
 
@@ -105,8 +127,12 @@ not hidden.
 | `CHECK_CONCURRENCY` | Global cap on in-flight endpoint checks (default 16) |
 | `CHECK_PER_HOST_DELAY_SECONDS` | Pause between requests to one host (default 1.0) |
 | `CHECK_TIMEOUT_SECONDS` | Per-request timeout (default 30) |
-| `CHECK_USER_AGENT` | Sent on every check; names the project and a contact URL |
-| `STATE_RETENTION_DAYS` | Age at which `endpoint_state` and `endpoint_content_state` rows are deleted (default 400) |
+| `CHECK_USER_AGENT` | Sent on every check and fetch; names the project and a contact URL |
+| `FETCH_CONCURRENCY` | Global cap on in-flight schedule downloads (default 8); the per-host delay is `CHECK_PER_HOST_DELAY_SECONDS` |
+| `FETCH_MAX_BYTES` | Largest body `feed_fetch` stores (default 2,000,000,000) |
+| `FETCH_BODY_MAX_BYTES` | Largest non-zip body it stores (default 1,000,000) |
+| `FETCH_WORKDIR` | Where downloads are written before upload; blank is the system temp dir |
+| `STATE_RETENTION_DAYS` | Age at which `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows are deleted (default 400) |
 | `SOURCE_ABSENT_RETENTION_DAYS` | Days absent before a `source`, `endpoint` or `feed` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
@@ -118,3 +144,4 @@ not hidden.
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `gtfs_zone_db_models.object_store`, not by this repo's `Settings` |
+| `ZIPS_S3_ENDPOINT` `ZIPS_S3_BUCKET` `ZIPS_S3_ACCESS_KEY` `ZIPS_S3_SECRET_KEY` `ZIPS_S3_REGION` | Private schedule bucket (default `gtfs-zips`); blank endpoint skips `feed_fetch` |

@@ -12,6 +12,7 @@ from gtfs_zone_feed_catalog.history.models import (
     CheckRun,
     EndpointRecord,
     EndpointState,
+    EndpointVersion,
     FeedRecord,
     SourceEndpoint,
     SourceRecord,
@@ -94,6 +95,32 @@ def test_a_state_change_writes_one_row_and_a_steady_state_writes_none(session_fa
         assert states[0].url == VP
         assert len(session.scalars(select(CheckRun)).all()) == 2
         assert session.get(EndpointRecord, VP).consecutive_failures == 0
+
+
+def test_a_sha256_change_writes_one_version_row(session_factory):
+    url = "https://example.org/gtfs.zip"
+    row = Source(
+        source_id="tl:f-s:static",
+        catalog="transitland",
+        kind="static",
+        feed_id="f-s",
+        name="S",
+        urls={"scheduled": url},
+    )
+    first = {url: result(url, sha256="a" * 64, content_length=10)}
+
+    run([row], first)
+    # A 304 carries the same sha256, an error none: neither is a change.
+    run([row], first)
+    run([row], {url: result(url, ok=False, status=500)})
+    run([row], {url: result(url, sha256="b" * 64, content_length=12)})
+
+    with session_factory() as session:
+        versions = session.scalars(
+            select(EndpointVersion).order_by(EndpointVersion.id)
+        ).all()
+        assert [(v.sha256[0], v.size) for v in versions] == [("a", 10), ("b", 12)]
+        assert session.get(EndpointRecord, url).sha256 == "b" * 64
 
 
 def test_going_down_and_back_writes_two_more_rows_and_counts_failures(session_factory):
@@ -266,6 +293,16 @@ def test_retention_deletes_old_rows_and_absent_things_only(session_factory):
                     state=UP,
                     changed_at=now - timedelta(days=20),
                 ),
+                EndpointVersion(
+                    url="https://keep.example.org",
+                    sha256="a" * 64,
+                    changed_at=now - timedelta(days=500),
+                ),
+                EndpointVersion(
+                    url="https://keep.example.org",
+                    sha256="b" * 64,
+                    changed_at=now - timedelta(days=10),
+                ),
             ]
         )
 
@@ -273,6 +310,7 @@ def test_retention_deletes_old_rows_and_absent_things_only(session_factory):
     assert prune() == {
         "endpoint_state": 1,
         "endpoint_content_state": 0,
+        "endpoint_version": 1,
         "source": 1,
         "endpoint": 1,
         "feed": 1,

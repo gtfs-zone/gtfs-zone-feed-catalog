@@ -49,6 +49,17 @@ class Settings(BaseSettings):
         " (+https://list.gtfs.zone; GTFS catalog reachability check)"
     )
 
+    # Schedule downloads (feed_fetch). Same per-host rule and User-Agent as the
+    # checks; fewer in flight, since each holds a temp file of up to
+    # fetch_max_bytes. Larger bodies are abandoned after the headers.
+    fetch_concurrency: int = 8
+    fetch_max_bytes: int = 2_000_000_000
+    # A body that is not a zip (an HTML error page, a JSON API answer) is
+    # stored only up to this size.
+    fetch_body_max_bytes: int = 1_000_000
+    # Where downloads are written before upload; empty is the system temp dir.
+    fetch_workdir: str = ""
+
     # Retention. Both are load-bearing: one 40Gi Garage volume holds every
     # snapshot, and endpoint_state grows with every up/down flap. The absent
     # window covers sources, endpoints and feeds alike.
@@ -72,7 +83,8 @@ class Settings(BaseSettings):
     # gtfs_zone_db_models.object_store.ObjectStoreSettings, off the same .env:
     # S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION. Not
     # mirrored here, so nothing can point the writer and the reader at
-    # different buckets by accident.
+    # different buckets by accident. The schedule store is the same settings
+    # class under a ZIPS_ prefix: see feed_fetch.ZipStoreSettings.
 
 
 settings = Settings()
