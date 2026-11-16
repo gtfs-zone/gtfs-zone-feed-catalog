@@ -1,3 +1,9 @@
+## v0.10.0 (2026-11-16)
+
+### Feat
+
+- **feed-fetch**: download every schedule once a day into the gtfs-zips bucket
+
 ## v0.9.0 (2026-11-12)
 
 ### Feat
