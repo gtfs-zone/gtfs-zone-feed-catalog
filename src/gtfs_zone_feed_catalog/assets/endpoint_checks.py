@@ -6,10 +6,14 @@ in flight, one request at a time per host with a pause between them, and a
 User-Agent that names the project and where to complain. None of those are
 tuning knobs to raise casually.
 
-HEAD first, because a feed is a zip or a protobuf and nobody needs the body. A
+Static URLs feed_fetch already downloaded are not requested again: its GET is
+their check. What is left is realtime URLs, and schedules when the fetch is
+unconfigured or on a trial run.
+
+HEAD first, because a check needs no body. A
 fair number of origins reject HEAD outright, so a rejection falls back to a GET
 with ``Range: bytes=0-0``, streamed and closed after the headers - the response
-body is never read. No feed contents are stored, ever.
+body is never read.
 
 Redirects are followed, and a final URL that differs from the requested one is
 recorded: a catalog entry pointing at a 301 is itself a finding.
@@ -77,9 +81,11 @@ class CheckResult:
     error_class: str = ""
     method: str = ""
     skipped: bool = False
+    # Static URLs feed_fetch downloaded: the sha256 of the body it stores.
+    sha256: str = ""
 
 
-def _error_class(exc: Exception) -> str:
+def error_class_of(exc: Exception) -> str:
     if isinstance(exc, httpx.ConnectTimeout | httpx.ReadTimeout | httpx.PoolTimeout):
         return "timeout"
     if isinstance(exc, httpx.ConnectError):
@@ -98,7 +104,7 @@ def _error_class(exc: Exception) -> str:
     return "other"
 
 
-class _Politeness:
+class Politeness:
     """One request at a time per host, with a delay between them."""
 
     def __init__(self, delay: float) -> None:
@@ -121,7 +127,7 @@ class _Politeness:
 async def _check_one(
     client: httpx.AsyncClient,
     url: str,
-    politeness: _Politeness,
+    politeness: Politeness,
     slots: asyncio.Semaphore,
 ) -> CheckResult:
     # A fragment is the app's own nested-zip selector, never the server's.
@@ -150,7 +156,7 @@ async def _check_one(
                 ok=False,
                 checked_at=datetime.now(UTC),
                 latency_ms=int((time.monotonic() - started) * 1000),
-                error_class=_error_class(exc),
+                error_class=error_class_of(exc),
                 method="HEAD",
             )
         finally:
@@ -168,7 +174,7 @@ async def _check_one(
         final_url="" if final_url == request_url else final_url,
         content_type=response.headers.get("content-type", "").split(";")[0].strip(),
         content_length=body_size(response),
-        last_modified=_http_date(response.headers.get("last-modified", "")),
+        last_modified=http_date(response.headers.get("last-modified", "")),
         etag=response.headers.get("etag", "").strip(),
         latency_ms=int((time.monotonic() - started) * 1000),
         error_class="" if ok else f"http_{status // 100}xx",
@@ -191,7 +197,7 @@ def body_size(response: httpx.Response) -> int | None:
     return int(length) if length.isdigit() else None
 
 
-def _http_date(value: str) -> datetime | None:
+def http_date(value: str) -> datetime | None:
     if not value:
         return None
     try:
@@ -253,7 +259,7 @@ def check_targets(rows: list[Source]) -> tuple[dict[str, str], dict[str, CheckRe
 
 
 async def run_checks(targets: dict[str, str]) -> dict[str, CheckResult]:
-    politeness = _Politeness(settings.check_per_host_delay_seconds)
+    politeness = Politeness(settings.check_per_host_delay_seconds)
     slots = asyncio.Semaphore(settings.check_concurrency)
     timeout = httpx.Timeout(settings.check_timeout_seconds)
 
@@ -316,9 +322,13 @@ def drop_realtime_sizes(
 
 @asset(description="Reachability of every distinct endpoint, keyed by normalized URL")
 def endpoint_checks(
-    config: EndpointChecksConfig, sources: list[Source]
+    config: EndpointChecksConfig,
+    sources: list[Source],
+    feed_fetch: dict[str, CheckResult],
 ) -> dict[str, CheckResult]:
     targets, skipped = check_targets(sources)
+    # A URL feed_fetch requested is already checked: its GET is the answer.
+    targets = {key: url for key, url in targets.items() if key not in feed_fetch}
     if config.limit:
         log.warning(
             "trial run: checking %d of %d endpoints", config.limit, len(targets)
@@ -329,8 +339,8 @@ def endpoint_checks(
     results = drop_realtime_sizes(
         asyncio.run(run_checks(targets)), static_keys(sources)
     )
-    results |= skipped
+    results |= feed_fetch | skipped
 
     reachable = sum(1 for r in results.values() if r.ok)
-    log.info("%d/%d endpoints answered", reachable, len(targets))
+    log.info("%d/%d endpoints answered", reachable, len(targets) + len(feed_fetch))
     return results

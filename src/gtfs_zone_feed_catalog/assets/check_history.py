@@ -7,7 +7,8 @@ all three to load. A source with nothing checkable (path-only URLs, or an API
 key we do not hold) is ``unknown``, which is deliberately not ``down``.
 
 Second, each URL's check is written to Postgres, and a state change becomes a
-row - but only the *change*. See ``history.models`` for why. History is per
+row - but only the *change*. So does a change of a schedule's sha256, when
+feed_fetch downloaded it. See ``history.models`` for why. History is per
 URL, so a row's "since" is derived from its URLs' histories rather than kept.
 
 Without a DATABASE_URL the fold still happens and the run still publishes; it
@@ -31,6 +32,7 @@ from gtfs_zone_feed_catalog.history.models import (
     CheckRun,
     EndpointRecord,
     EndpointState,
+    EndpointVersion,
     SourceEndpoint,
     SourceRecord,
 )
@@ -255,11 +257,23 @@ def record(
                     state=UNKNOWN,
                     consecutive_failures=0,
                     ever_up=False,
+                    sha256="",
                 )
                 session.add(endpoint)
                 endpoints[key] = endpoint
             endpoint.last_seen = now
             result = checked.get(key)
+            if result is not None and result.sha256 not in ("", endpoint.sha256):
+                endpoint.sha256 = result.sha256
+                session.add(
+                    EndpointVersion(
+                        url=key,
+                        check_run_id=run.id,
+                        sha256=result.sha256,
+                        size=result.content_length,
+                        changed_at=now,
+                    )
+                )
             if result is not None and _apply_check(endpoint, result, now):
                 session.add(
                     EndpointState(

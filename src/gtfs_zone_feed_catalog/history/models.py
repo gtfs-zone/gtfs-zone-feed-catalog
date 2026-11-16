@@ -111,6 +111,8 @@ class EndpointRecord(Base):
     etag: Mapped[str] = mapped_column(Text, nullable=False, default="")
     final_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # sha256 of the last body feed_fetch downloaded; "" until one was.
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
     __table_args__ = (
         Index("ix_endpoint_last_seen", "last_seen"),
@@ -172,6 +174,28 @@ class EndpointState(Base):
     )
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+
+class EndpointVersion(Base):
+    """One row per change of a URL's downloaded body, never one per download."""
+
+    __tablename__ = "endpoint_version"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("endpoint.url", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    check_run_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("check_run.id", ondelete="SET NULL"), nullable=True
+    )
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
 
 
 class EndpointContent(Base):

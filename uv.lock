@@ -649,6 +649,7 @@ dependencies = [
     { name = "dagster-webserver" },
     { name = "gtfs-zone-db-models" },
     { name = "httpx" },
+    { name = "obstore" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "pykakasi" },
@@ -659,7 +660,6 @@ dependencies = [
 dev = [
     { name = "commitizen" },
     { name = "deptry" },
-    { name = "obstore" },
     { name = "pytest" },
     { name = "respx" },
     { name = "ruff" },
@@ -675,6 +675,7 @@ requires-dist = [
     { name = "dagster-webserver", specifier = ">=1.9" },
     { name = "gtfs-zone-db-models", git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.4.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "obstore", specifier = ">=0.12" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "pykakasi", specifier = ">=2.3.0" },
@@ -685,7 +686,6 @@ requires-dist = [
 dev = [
     { name = "commitizen" },
     { name = "deptry", specifier = ">=0.25.1" },
-    { name = "obstore", specifier = ">=0.12" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff" },

@@ -29,6 +29,7 @@ from gtfs_zone_feed_catalog.history.models import (
     EndpointContentState,
     EndpointRecord,
     EndpointState,
+    EndpointVersion,
     FeedRecord,
     SourceRecord,
 )
@@ -52,6 +53,9 @@ def prune(now: datetime | None = None) -> dict[str, int]:
                 delete(EndpointContentState).where(
                     EndpointContentState.changed_at < state_cutoff
                 )
+            ).rowcount,
+            "endpoint_version": session.execute(
+                delete(EndpointVersion).where(EndpointVersion.changed_at < state_cutoff)
             ).rowcount,
             # Only rows no catalog still lists: a present source keeps its row
             # however old it is.
