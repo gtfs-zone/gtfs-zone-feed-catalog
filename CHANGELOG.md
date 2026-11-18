@@ -1,3 +1,9 @@
+## v0.11.0 (2026-11-19)
+
+### Feat
+
+- **search**: place tags from the content report as pt in search.json
+
 ## v0.10.0 (2026-11-16)
 
 ### Feat
