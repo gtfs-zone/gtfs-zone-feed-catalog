@@ -335,6 +335,19 @@ def alt_names(
     return sorted(name for name in names if name.strip())
 
 
+def place_tags(content: FeedContent | None, place: list[str]) -> list[str]:
+    """The countries and regions the feed's stations are in, from the content
+    report, most stop times first, leaving out the catalog place's parts."""
+    tags = (content.facts.get("placeTags") if content else None) or {}
+    seen = {part.casefold() for part in place}
+    found = []
+    for tag in [*tags.get("countries", []), *tags.get("regions", [])]:
+        if tag.casefold() not in seen:
+            seen.add(tag.casefold())
+            found.append(tag)
+    return found
+
+
 def search_entry(
     feed: Feed,
     statuses: dict[str, SourceStatus],
@@ -345,6 +358,7 @@ def search_entry(
     every app's feed picker. See feed_entry for what each field means."""
     members = [rows[m] for m in feed.members if m in (rows or {})]
     place = feed.place
+    content = feed_content(feed, contents)
     entry: dict[str, Any] = {
         "i": feed.feed_id,
         "n": feed.name,
@@ -354,7 +368,7 @@ def search_entry(
     }
     if feed.subtitle:
         entry["s"] = feed.subtitle
-    if names := alt_names(feed, members, feed_content(feed, contents)):
+    if names := alt_names(feed, members, content):
         entry["a"] = names
     # Municipality, subdivision, country: what a place search matches and a
     # place line shows.
@@ -368,6 +382,8 @@ def search_entry(
         if part
     ]:
         entry["p"] = parts
+    if tags := place_tags(content, entry.get("p", [])):
+        entry["pt"] = tags
     if place.country_code:
         entry["cc"] = place.country_code
     if place.placed:

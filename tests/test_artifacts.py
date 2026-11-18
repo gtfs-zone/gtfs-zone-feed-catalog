@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 from gtfs_zone_feed_catalog import artifacts
 from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
 from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
+from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
 from gtfs_zone_feed_catalog.assets.feeds import build_feeds
 from gtfs_zone_feed_catalog.catalog import Place, Source
 
@@ -382,6 +383,36 @@ def test_a_search_entry_is_the_feed_cut_down():
         "b": 4096,
         "m": "2026-09-01",
     }
+
+
+def test_a_search_entry_carries_the_content_reports_place_tags():
+    (feed,) = build_feeds([STATIC], {}, {})
+    content = FeedContent(
+        url="https://a.org/gtfs.zip",
+        outcome="ok",
+        checked=date(2026, 11, 15),
+        since=date(2026, 11, 1),
+        facts={
+            "placeTags": {
+                "countries": ["United States", "Canada"],
+                "regions": ["Massachusetts", "Ontario"],
+            }
+        },
+    )
+    contents = {"https://a.org/gtfs.zip": content}
+    entry = artifacts.search_entry(feed, {}, contents)
+    assert entry["pt"] == ["United States", "Canada", "Massachusetts", "Ontario"]
+    place = Place(
+        country_code="US",
+        country="United States",
+        subdivision="Massachusetts",
+        latitude=42.0,
+        longitude=-71.0,
+    )
+    (placed,) = build_feeds([STATIC.with_place(place)], {}, {})
+    entry = artifacts.search_entry(placed, {}, contents)
+    assert entry["pt"] == ["Canada", "Ontario"]
+    assert "pt" not in artifacts.search_entry(feed, {})
 
 
 def test_the_summary_counts_ntd_rows_and_links_no_catalog_page():
