@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Empty skips it.
     rt_api_catalog_url: str = "https://rt.gtfs.zone/feeds"
 
-    # FTA's NTD GTFS weblinks dataset, over Socrata's SODA3 query API. Empty
+    # FTA's NTD GTFS weblinks dataset, a bare GET of its SODA3 view. Empty
     # skips it. The token is optional, sent as X-App-Token, and never logged.
     ntd_weblinks_url: str = (
         "https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json"

@@ -1,11 +1,7 @@
 """The NTD GTFS weblinks dataset as source rows."""
 
-import json
-
-import httpx
 import respx
 
-from gtfs_zone_feed_catalog.assets import ntd as ntd_module
 from gtfs_zone_feed_catalog.assets.ntd import build_sources, ntd
 from gtfs_zone_feed_catalog.catalog import Place
 from gtfs_zone_feed_catalog.settings import settings
@@ -101,45 +97,37 @@ def test_a_dba_name_is_used_in_place_of_the_legal_one():
 
 
 @respx.mock
-def test_the_asset_pages_until_a_short_page(monkeypatch):
-    monkeypatch.setattr(ntd_module, "PAGE_SIZE", 2)
-    pages = [RECORDS[0:2], RECORDS[2:4], RECORDS[4:5]]
-    seen: list[int] = []
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        number = json.loads(request.content)["page"]["pageNumber"]
-        seen.append(number)
-        return httpx.Response(200, json=pages[number - 1])
-
-    respx.post(URL).mock(side_effect=respond)
+def test_the_asset_reads_every_record_with_one_bare_get():
+    route = respx.get(URL).respond(json=RECORDS)
     rows = ntd()
-    assert seen == [1, 2, 3]
-    assert len(rows) == 3
+    assert route.call_count == 1
+    assert route.calls.last.request.url.query == b""
+    assert len(rows) == 4
 
 
 @respx.mock
 def test_a_failing_endpoint_yields_no_rows():
-    respx.post(URL).respond(500)
+    respx.get(URL).respond(500)
     assert ntd() == []
 
 
 @respx.mock
 def test_a_non_array_body_yields_no_rows():
-    respx.post(URL).respond(json={"error": "nope"})
+    respx.get(URL).respond(json={"error": "nope"})
     assert ntd() == []
 
 
 def test_a_blank_url_skips_the_catalog(monkeypatch):
     monkeypatch.setattr(settings, "ntd_weblinks_url", "")
     with respx.mock(assert_all_called=False) as mock:
-        route = mock.post(URL)
+        route = mock.get(URL)
         assert ntd() == []
         assert not route.called
 
 
 @respx.mock
 def test_the_app_token_is_sent_only_when_set(monkeypatch):
-    route = respx.post(URL).respond(json=[])
+    route = respx.get(URL).respond(json=[])
     ntd()
     assert "X-App-Token" not in route.calls.last.request.headers
 

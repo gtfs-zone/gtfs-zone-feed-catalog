@@ -2,10 +2,10 @@
 
 Every NTD reporter with fixed-route service submits a public GTFS weblink, and
 FTA publishes them as the "General Transit Feed Specification Weblinks"
-dataset on data.transportation.gov. It is read over Socrata's SODA3 query API,
-paged with ``pageNumber``/``pageSize`` and stopped on a short page. The API
-answers anonymously today; ``NTD_APP_TOKEN`` is sent as ``X-App-Token`` when
-set, should Socrata start requiring one.
+dataset on data.transportation.gov. It is read with one bare GET of the SODA3
+view endpoint, which returns every record anonymously; a SoQL query or paging
+parameters there answer 403 without an app token. ``NTD_APP_TOKEN`` is sent as
+``X-App-Token`` when set.
 
 The dataset has one record per agency x mode x type of service, and mode and
 type of service do not change the URL, so records collapse to one row per
@@ -31,11 +31,6 @@ from gtfs_zone_feed_catalog.urls import normalize_url
 
 log = logging.getLogger(__name__)
 
-PAGE_SIZE = 1000
-QUERY = (
-    "SELECT ntd_id, agency_name, city, state, weblink, weblink_justification"
-    " ORDER BY :id"
-)
 ORIGIN = "FTA National Transit Database"
 
 # USPS codes the dataset uses, to the full names the Mobility Database uses as
@@ -156,29 +151,17 @@ def build_sources(records: list[dict[str, Any]]) -> list[Source]:
 
 
 def fetch_records(client: httpx.Client, url: str) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    page_number = 1
-    while True:
-        response = client.post(
-            url,
-            json={
-                "query": QUERY,
-                "page": {"pageNumber": page_number, "pageSize": PAGE_SIZE},
-            },
+    response = client.get(url)
+    if response.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+        log.warning(
+            "ntd: HTTP %d; set NTD_APP_TOKEN if Socrata now requires one",
+            response.status_code,
         )
-        if response.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
-            log.warning(
-                "ntd: HTTP %d; set NTD_APP_TOKEN if Socrata now requires one",
-                response.status_code,
-            )
-        response.raise_for_status()
-        page = response.json()
-        if not isinstance(page, list):
-            raise ValueError(f"expected a JSON array, got {type(page).__name__}")
-        records += page
-        if len(page) < PAGE_SIZE:
-            return records
-        page_number += 1
+    response.raise_for_status()
+    records = response.json()
+    if not isinstance(records, list):
+        raise ValueError(f"expected a JSON array, got {type(records).__name__}")
+    return records
 
 
 @asset(

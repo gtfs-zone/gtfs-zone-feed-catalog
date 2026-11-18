@@ -10,7 +10,7 @@ order:
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
 | `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
-| `ntd` | FTA's NTD GTFS weblinks over SODA3 (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
+| `ntd` | FTA's NTD GTFS weblinks, one GET of the SODA3 view (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
 | `sources` | One row per source kind, ids namespaced by catalog, cross-linked by URL with http and https unified |
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
@@ -144,7 +144,7 @@ not hidden.
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
 | `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`), the fallback for URLs `feed_facts` has nothing on; blank skips it |
 | `RT_API_CATALOG_URL` | rt-api's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
-| `NTD_WEBLINKS_URL` | NTD GTFS weblinks SODA3 query endpoint (default `https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json`); blank skips it |
+| `NTD_WEBLINKS_URL` | NTD GTFS weblinks SODA3 view, fetched with a bare GET (default `https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json`); blank skips it |
 | `NTD_APP_TOKEN` | Optional Socrata app token, sent as `X-App-Token`; never logged |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
