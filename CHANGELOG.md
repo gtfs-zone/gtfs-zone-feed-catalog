@@ -1,3 +1,13 @@
+## v0.12.0 (2026-11-19)
+
+### Feat
+
+- **facts**: feed_facts scans every stored zip, feed_contents and feeds read it
+
+### Fix
+
+- **facts**: gtfs-zone-feed-fetch v0.1.1, facts of feeds with unknown language codes keep their languages
+
 ## v0.11.0 (2026-11-19)
 
 ### Feat
