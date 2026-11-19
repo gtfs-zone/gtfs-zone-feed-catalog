@@ -122,8 +122,51 @@ def test_an_unreachable_report_keeps_what_was_recorded(session_factory, monkeypa
     _endpoint(session_factory, URL)
     record({URL: parse_entry(BAD)}, NOW)
     respx.get(f"{BASE}_content/index.json").respond(503)
-    contents = module.feed_contents(check_history={})
+    contents = module.feed_contents(check_history={}, feed_facts={})
     assert contents[URL].outcome == "not_zip"
+
+
+def _report(base: str, entries: list[dict]) -> None:
+    respx.get(f"{base}_content/index.json").respond(
+        200, json={"shards": ["_content/00.json"]}
+    )
+    respx.get(f"{base}_content/00.json").respond(
+        200, json={str(i): entry for i, entry in enumerate(entries)}
+    )
+
+
+@respx.mock
+def test_feed_facts_win_over_the_site_report(session_factory, monkeypatch):
+    monkeypatch.setattr(settings, "content_report_base", BASE)
+    other = "https://example.org/other.zip"
+    _endpoint(session_factory, URL)
+    _endpoint(session_factory, other)
+    _report(BASE, [BAD, BAD | {"url": other}])
+    fetched = FeedContent(
+        url=URL,
+        outcome="ok",
+        checked=date(2026, 9, 30),
+        since=date(2026, 9, 30),
+        sha256="cd" * 32,
+        facts={"counts": {"routes": 9}},
+    )
+    contents = module.feed_contents(check_history={}, feed_facts={URL: fetched})
+    assert contents[URL].outcome == "ok"
+    assert contents[URL].facts == {"counts": {"routes": 9}}
+    # A URL feed_facts has nothing on keeps the site report's content.
+    assert contents[other].outcome == "not_zip"
+
+
+@respx.mock
+def test_feed_facts_are_recorded_without_the_site_report(session_factory, monkeypatch):
+    monkeypatch.setattr(settings, "content_report_base", BASE)
+    _endpoint(session_factory, URL)
+    respx.get(f"{BASE}_content/index.json").respond(503)
+    fetched = FeedContent(
+        url=URL, outcome="missing_files", checked=NOW.date(), since=NOW.date()
+    )
+    contents = module.feed_contents(check_history={}, feed_facts={URL: fetched})
+    assert contents[URL].outcome == "missing_files"
 
 
 def test_a_feed_entry_carries_its_schedule_content():

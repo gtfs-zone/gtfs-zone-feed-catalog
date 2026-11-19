@@ -11,7 +11,9 @@ body that is not a zip (an HTML error page, a JSON answer) is kept as
 ``gtfs/<sha256>.body`` when small. ``gtfs/index.json`` maps each normalized URL
 to its stored object and validators; it is written after the uploads and before
 any object no URL references is deleted, so it never names a missing object.
-Only the latest body per URL is kept.
+Only the latest body per URL is kept. A zip's ``gtfs/<sha256>.facts.json``
+(``feed_facts``) is kept while the zip is, and deleted with it. The layout is
+``gtfs_zone_feed_fetch.store``.
 
 The response is also that URL's check: ``endpoint_checks`` does not request a
 URL fetched here again. A body over ``fetch_max_bytes`` is abandoned after the
@@ -23,26 +25,33 @@ fetched and ``endpoint_checks`` checks every URL as before.
 
 import asyncio
 import hashlib
-import json
 import logging
 import tempfile
 import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import httpx
 import obstore
 from dagster import Config, asset
-from gtfs_zone_db_models.object_store import (
-    ObjectNotFound,
-    ObjectStore,
-    ObjectStoreError,
-    ObjectStoreSettings,
+from gtfs_zone_db_models.object_store import ObjectStore, ObjectStoreError
+from gtfs_zone_feed_fetch.sniff import sniff
+from gtfs_zone_feed_fetch.store import (
+    ERROR,
+    HTTP_ERROR,
+    INDEX_KEY,
+    NOT_MODIFIED,
+    OK,
+    PREFIX,
+    TOO_LARGE,
+    ZIP_CONTENT_TYPE,
+    Stored,
+    facts_key,
+    index_body,
+    object_key,
 )
 from obstore.exceptions import BaseError
-from pydantic_settings import SettingsConfigDict
 
 from gtfs_zone_feed_catalog.assets.endpoint_checks import (
     CheckResult,
@@ -57,127 +66,11 @@ from gtfs_zone_feed_catalog.assets.endpoint_checks import (
 from gtfs_zone_feed_catalog.catalog import Source
 from gtfs_zone_feed_catalog.settings import settings
 from gtfs_zone_feed_catalog.urls import host_of
+from gtfs_zone_feed_catalog.zips import ZipStoreSettings, read_index
 
 log = logging.getLogger(__name__)
 
-PREFIX = "gtfs/"
-INDEX_KEY = "gtfs/index.json"
-ZIP_CONTENT_TYPE = "application/zip"
 CHUNK = 1 << 20
-
-# Outcomes of one URL's last request.
-OK = "ok"
-NOT_MODIFIED = "not_modified"
-TOO_LARGE = "too_large"
-HTTP_ERROR = "http_error"
-ERROR = "error"
-
-
-class ZipStoreSettings(ObjectStoreSettings):
-    """The schedule bucket: ObjectStoreSettings read from ZIPS_S3_* instead."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="ZIPS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
-
-    s3_bucket: str = "gtfs-zips"
-
-
-@dataclass(frozen=True, slots=True)
-class Stored:
-    """One URL's entry in ``gtfs/index.json``."""
-
-    # The URL as requested.
-    url: str
-    checked: str
-    outcome: str
-    status: int | None = None
-    # The object holding the latest body; "" when none is stored.
-    key: str = ""
-    sha256: str = ""
-    bytes: int | None = None
-    # zip, html, json, xml, empty or unknown, from the body's first bytes.
-    kind: str = ""
-    content_type: str = ""
-    # Header values as received, sent back as If-None-Match / If-Modified-Since.
-    etag: str = ""
-    last_modified: str = ""
-    # When the body was last downloaded, and when its sha256 last changed.
-    fetched: str = ""
-    since: str = ""
-
-
-INDEX_FIELDS = {
-    "url": "url",
-    "checked": "checked",
-    "outcome": "outcome",
-    "status": "status",
-    "key": "key",
-    "sha256": "sha256",
-    "bytes": "bytes",
-    "kind": "kind",
-    "content_type": "contentType",
-    "etag": "etag",
-    "last_modified": "lastModified",
-    "fetched": "fetched",
-    "since": "since",
-}
-
-
-def to_json(entry: Stored) -> dict[str, Any]:
-    return {name: getattr(entry, attr) for attr, name in INDEX_FIELDS.items()}
-
-
-def from_json(data: dict[str, Any]) -> Stored:
-    return Stored(
-        **{attr: data[name] for attr, name in INDEX_FIELDS.items() if name in data}
-    )
-
-
-def read_index(store: ObjectStore) -> dict[str, Stored]:
-    """The index by normalized URL, or an empty one on a new bucket."""
-    try:
-        urls = json.loads(store.get(INDEX_KEY)).get("urls", {})
-    except ObjectNotFound:
-        return {}
-    return {key: from_json(entry) for key, entry in urls.items()}
-
-
-def index_body(entries: dict[str, Stored], generated: datetime) -> bytes:
-    return json.dumps(
-        {
-            "generated": generated.isoformat(),
-            "maxBytes": settings.fetch_max_bytes,
-            "urls": {key: to_json(entry) for key, entry in entries.items()},
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-
-
-def sniff(head: bytes) -> str:
-    """What a body is from its first bytes: zip, empty, html, json, xml or unknown."""
-    if head.startswith((b"PK\x03\x04", b"PK\x05\x06")):
-        return "zip"
-    head = head[:512].lstrip().lower()
-    if not head:
-        return "empty"
-    if head.startswith((b"<!doctype html", b"<html")) or b"<html" in head:
-        return "html"
-    if head.startswith((b"{", b"[")):
-        return "json"
-    if head.startswith(b"<"):
-        return "xml"
-    return "unknown"
-
-
-def object_key(sha256: str, kind: str, size: int) -> str:
-    """Where a body is stored, or "" for a non-zip body too large to keep."""
-    if kind == "zip":
-        return f"{PREFIX}{sha256}.zip"
-    if size <= settings.fetch_body_max_bytes:
-        return f"{PREFIX}{sha256}.body"
-    return ""
 
 
 def conditional_headers(previous: Stored | None, have: set[str]) -> dict[str, str]:
@@ -423,7 +316,9 @@ async def fetch_one(
 
         key = ""
         if got.path is not None:
-            key = object_key(got.sha256, got.kind, got.size)
+            key = object_key(
+                got.sha256, got.kind, got.size, settings.fetch_body_max_bytes
+            )
             if key and key not in have:
                 content_type = (
                     ZIP_CONTENT_TYPE
@@ -475,8 +370,17 @@ def write_index(
 ) -> int:
     """Write the index, then delete objects it does not reference. Returns how
     many were deleted."""
-    store.put(INDEX_KEY, index_body(entries, now), content_type="application/json")
+    store.put(
+        INDEX_KEY,
+        index_body(entries, now, settings.fetch_max_bytes),
+        content_type="application/json",
+    )
     referenced = {entry.key for entry in entries.values() if entry.key}
+    referenced |= {
+        facts_key(entry.sha256)
+        for entry in entries.values()
+        if entry.key and entry.kind == "zip"
+    }
     orphans = sorted(have - referenced)
     if orphans:
         try:

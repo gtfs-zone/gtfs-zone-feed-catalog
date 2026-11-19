@@ -1,16 +1,20 @@
-"""What each schedule's download actually held, from timetable-sites's content report.
+"""What each schedule's download actually held.
 
-HEAD says a URL answers; it cannot say the body is a GTFS zip. timetable-sites
-downloads and parses every schedule it builds a site from, and publishes per
-shard the outcome of its last download (`ok`, `not_zip`, `missing_files`, ...)
-and, when ok, the zip's feed_info, service range, agencies and counts, listed
-in ``_content/index.json`` at ``settings.content_report_base``.
+HEAD says a URL answers; it cannot say the body is a GTFS zip. ``feed_facts``
+says, the same day, for every schedule ``feed_fetch`` stored: the outcome
+(``ok``, ``not_zip``, ``missing_files``, ...) and, when ok, the zip's
+feed_info, service range, agencies, counts and place.
 
-The report is read over HTTPS like any consumer would, keyed by normalized URL
-and recorded against the URL's endpoint, with one ``endpoint_content_state``
-row per outcome change. timetable-sites runs after this pipeline, so what is read
-is the previous day's report. A report that cannot be fetched leaves the last
-recorded contents in place rather than failing the run.
+For a URL ``feed_facts`` has nothing on, timetable-sites's content report is
+the fallback: per shard, the outcome of its last download of each site's zip
+and its facts, listed in ``_content/index.json`` at
+``settings.content_report_base``. It is read over HTTPS like any consumer
+would, and is the previous day's.
+
+Contents are keyed by normalized URL and recorded against the URL's endpoint,
+with one ``endpoint_content_state`` row per outcome change. A report that
+cannot be fetched leaves the last recorded contents in place rather than
+failing the run.
 """
 
 import logging
@@ -43,7 +47,7 @@ ENTRY_KEYS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class FeedContent:
-    """One URL's last download, as timetable-sites reported it."""
+    """One URL's last download, from feed_facts or timetable-sites's report."""
 
     url: str
     outcome: str
@@ -159,16 +163,33 @@ def recorded() -> dict[str, FeedContent]:
         return {row.url: _from_record(row) for row in rows}
 
 
-@asset(
-    description="Each schedule's last download outcome and facts, from timetable-sites"
-)
+@asset(description="Each schedule's last download outcome and facts")
 def feed_contents(
     check_history: dict[str, SourceStatus],
+    feed_facts: dict[str, FeedContent],
 ) -> dict[str, FeedContent]:
     # check_history is an ordering input: every URL's endpoint row exists first.
+    reported = site_report()
+    if reported is None:
+        if not feed_facts:
+            return recorded() if settings.database_url else {}
+        reported = {}
+    log.info(
+        "contents: %d urls from feed_facts, %d more from the site report",
+        len(feed_facts),
+        len(reported.keys() - feed_facts.keys()),
+    )
+    contents = reported | feed_facts
+    if not settings.database_url:
+        return contents
+    return record(contents)
+
+
+def site_report() -> dict[str, FeedContent] | None:
+    """timetable-sites's content report, None when it cannot be read."""
     base = settings.content_report_base
     if not base:
-        log.warning("CONTENT_REPORT_BASE is unset; no feed contents")
+        log.warning("CONTENT_REPORT_BASE is unset; no site report")
         return {}
     try:
         with httpx.Client(
@@ -176,11 +197,7 @@ def feed_contents(
             timeout=settings.check_timeout_seconds,
             follow_redirects=True,
         ) as http:
-            reported = fetch_report(http, base)
+            return fetch_report(http, base)
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("content report unavailable: %s", exc)
-        return recorded() if settings.database_url else {}
-    log.info("content report: %d urls", len(reported))
-    if not settings.database_url:
-        return reported
-    return record(reported)
+        return None

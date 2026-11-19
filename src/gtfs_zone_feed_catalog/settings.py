@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Where downloads are written before upload; empty is the system temp dir.
     fetch_workdir: str = ""
 
+    # Facts of each stored zip (feed_facts): this many worker processes, each
+    # holding one zip in fetch_workdir and capped at facts_worker_memory bytes
+    # of address space. The largest feeds (SKI+, DELFI) peak under 1 GB.
+    facts_workers: int = 2
+    facts_worker_memory: int = 3_000_000_000
+
     # Retention. Both are load-bearing: one 40Gi Garage volume holds every
     # snapshot, and endpoint_state grows with every up/down flap. The absent
     # window covers sources, endpoints and feeds alike.
@@ -84,7 +90,7 @@ class Settings(BaseSettings):
     # S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION. Not
     # mirrored here, so nothing can point the writer and the reader at
     # different buckets by accident. The schedule store is the same settings
-    # class under a ZIPS_ prefix: see feed_fetch.ZipStoreSettings.
+    # class under a ZIPS_ prefix: see zips.ZipStoreSettings.
 
 
 settings = Settings()

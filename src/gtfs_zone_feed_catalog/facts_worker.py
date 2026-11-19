@@ -1,0 +1,47 @@
+"""The facts of one zip on disk, computed in a worker process of its own.
+
+Only the library is imported here: a worker is a fresh process capped in
+address space, and Dagster or obstore (whose runtime threads reserve over a GB)
+would count against the cap."""
+
+import csv
+import zipfile
+from pathlib import Path
+from typing import Any
+
+from gtfs_zone_feed_fetch.facts import FACTS_VERSION, scan
+from gtfs_zone_feed_fetch.reader import MissingFiles
+
+DETAIL_LENGTH = 200
+
+
+def facts_doc(
+    outcome: str, detail: str = "", facts: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """A ``gtfs/<sha256>.facts.json`` document. ``facts`` is set when ok."""
+    return {
+        "version": FACTS_VERSION,
+        "outcome": outcome,
+        "detail": detail[:DETAIL_LENGTH],
+        "facts": facts or {},
+    }
+
+
+def scan_doc(path: str) -> dict[str, Any]:
+    """The facts document of the zip at ``path``; a zip that cannot be read is
+    an outcome."""
+    try:
+        return facts_doc("ok", facts=scan(Path(path)))
+    except zipfile.BadZipFile as exc:
+        return facts_doc("not_zip", str(exc))
+    except MissingFiles as exc:
+        return facts_doc("missing_files", str(exc))
+    except (
+        ValueError,
+        KeyError,
+        IndexError,
+        UnicodeDecodeError,
+        csv.Error,
+        EOFError,
+    ) as exc:
+        return facts_doc("parse_error", f"{type(exc).__name__}: {exc}")
