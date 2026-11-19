@@ -15,7 +15,8 @@ order:
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
-| `feed_contents` | Read timetable-sites's content report (what each schedule's download held: ok, not_zip, ...; feed_info, service range, counts) and record it per URL, with outcome changes |
+| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags, kept as `gtfs/<sha256>.facts.json` |
+| `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
@@ -26,10 +27,10 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts; only for feeds timetable-sites builds), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
-| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries and regions of the feed's stations, from timetable-sites' content report, minus the place's parts), state, `roleState`, URLs, auth, size, date. What every app's picker and list.gtfs.zone's first paint fetch |
+| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries and regions of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date. What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
@@ -66,13 +67,16 @@ bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
 |---|---|
 | `gtfs/<sha256>.zip` | A zip body, stored once however many URLs serve it |
 | `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
+| `gtfs/<sha256>.facts.json` | `feed_facts`' scan of that zip: `version` (`FACTS_VERSION`), `outcome` (`ok`, `not_zip`, `missing_files`, `parse_error`, `memory`), `detail`, `facts` (the content report's facts; empty unless ok) |
 | `gtfs/index.json` | `generated`, `maxBytes`, and `urls`: normalized URL to `url` (as requested), `checked`, `outcome` (`ok`, `not_modified`, `too_large`, `http_error`, `error`), `status`, `key` (the stored object, `""` when none), `sha256`, `bytes`, `kind` (`zip`, `html`, `json`, `xml`, `empty`, `unknown`), `contentType`, `etag`, `lastModified` (header values as received), `fetched` (last download), `since` (last sha256 change) |
 
 The request is a conditional GET with the stored body's validators; a 304 or a
 failure keeps the stored body. A body over `FETCH_MAX_BYTES` is abandoned after
 the headers and nothing is stored for it. The index is written after the
 uploads, then every object it does not reference is deleted: only the latest
-body per URL is kept, and a URL no catalog lists loses its object.
+body per URL is kept, and a URL no catalog lists loses its object. A facts
+document lives as long as its zip. The layout is `gtfs_zone_feed_fetch.store`,
+shared with the other pipelines that read the bucket.
 
 ## Logical feeds
 
@@ -80,8 +84,8 @@ Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
 joins rows on exactly six kinds of evidence:
 
 - a shared URL (http and https unified), any kind, any catalog;
-- byte-identical schedules: scheduled URLs whose last ok download had the
-  same sha256;
+- byte-identical schedules: scheduled URLs whose stored zip has the same
+  sha256 (the same day's download);
 - an MDB realtime row's `feed_references` to an MDB static row;
 - a Transitland realtime feed to its operator's schedule, when the operator
   (top-level or nested in a feed) has exactly one schedule and every operator
@@ -98,7 +102,7 @@ Transitland operators' only one; PTV's nested-zip feeds sharing one download
 are one feed) and a wrong link can only be undone by changing the rules. Names:
 a Transitland operator, then a Mobility Database provider (its feed_name
 becomes the feed's `subtitle`), then the schedule's own single agency or
-publisher from the content report, then an NTD agency, then any row's name. Coordinates: any
+publisher from `feed_contents`, then an NTD agency, then any row's name. Coordinates: any
 placed member.
 
 Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
@@ -131,12 +135,14 @@ not hidden.
 | `FETCH_CONCURRENCY` | Global cap on in-flight schedule downloads (default 8); the per-host delay is `CHECK_PER_HOST_DELAY_SECONDS` |
 | `FETCH_MAX_BYTES` | Largest body `feed_fetch` stores (default 2,000,000,000) |
 | `FETCH_BODY_MAX_BYTES` | Largest non-zip body it stores (default 1,000,000) |
-| `FETCH_WORKDIR` | Where downloads are written before upload; blank is the system temp dir |
+| `FETCH_WORKDIR` | Where downloads are written before upload, and zips copied for `feed_facts`; blank is the system temp dir |
+| `FACTS_WORKERS` | Zips `feed_facts` scans at once, each in a process of its own (default 2) |
+| `FACTS_WORKER_MEMORY` | Address space cap per facts worker in bytes (default 3,000,000,000); a zip over it is stored as `memory` |
 | `STATE_RETENTION_DAYS` | Age at which `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows are deleted (default 400) |
 | `SOURCE_ABSENT_RETENTION_DAYS` | Days absent before a `source`, `endpoint` or `feed` row is deleted (default 90) |
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
-| `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`); blank skips it |
+| `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`), the fallback for URLs `feed_facts` has nothing on; blank skips it |
 | `RT_API_CATALOG_URL` | rt-api's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
 | `NTD_WEBLINKS_URL` | NTD GTFS weblinks SODA3 query endpoint (default `https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json`); blank skips it |
 | `NTD_APP_TOKEN` | Optional Socrata app token, sent as `X-App-Token`; never logged |
@@ -144,4 +150,4 @@ not hidden.
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `gtfs_zone_db_models.object_store`, not by this repo's `Settings` |
-| `ZIPS_S3_ENDPOINT` `ZIPS_S3_BUCKET` `ZIPS_S3_ACCESS_KEY` `ZIPS_S3_SECRET_KEY` `ZIPS_S3_REGION` | Private schedule bucket (default `gtfs-zips`); blank endpoint skips `feed_fetch` |
+| `ZIPS_S3_ENDPOINT` `ZIPS_S3_BUCKET` `ZIPS_S3_ACCESS_KEY` `ZIPS_S3_SECRET_KEY` `ZIPS_S3_REGION` | Private schedule bucket (default `gtfs-zips`); blank endpoint skips `feed_fetch` and `feed_facts` |

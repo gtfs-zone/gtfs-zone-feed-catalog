@@ -6,21 +6,17 @@ import json
 import httpx
 import pytest
 import respx
+from gtfs_zone_feed_fetch.store import INDEX_KEY, PREFIX, facts_key
 
 from gtfs_zone_feed_catalog.assets.endpoint_checks import (
     EndpointChecksConfig,
     endpoint_checks,
     result_key,
 )
-from gtfs_zone_feed_catalog.assets.feed_fetch import (
-    INDEX_KEY,
-    PREFIX,
-    fetch,
-    read_index,
-    sniff,
-)
+from gtfs_zone_feed_catalog.assets.feed_fetch import fetch
 from gtfs_zone_feed_catalog.catalog import Source
 from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.zips import read_index
 
 A = "https://a.example.org/gtfs.zip"
 B = "https://b.example.org/gtfs.zip"
@@ -118,6 +114,21 @@ def test_a_changed_schedule_replaces_the_object_and_deletes_the_orphan(store):
     entry = read_index(store)[result_key(A)]
     assert entry.sha256 == sha(ZIP2)
     assert entry.since != first.since
+    assert objects(store) == {f"{PREFIX}{sha(ZIP2)}.zip"}
+
+
+@respx.mock
+def test_facts_are_kept_with_their_zip_and_deleted_with_it(store):
+    route = respx.get(A)
+    route.respond(200, content=ZIP)
+    fetch(store, [static("a", A)])
+    store.put(facts_key(sha(ZIP)), b"{}")
+
+    fetch(store, [static("a", A)])
+    assert facts_key(sha(ZIP)) in objects(store)
+
+    route.respond(200, content=ZIP2)
+    fetch(store, [static("a", A)])
     assert objects(store) == {f"{PREFIX}{sha(ZIP2)}.zip"}
 
 
@@ -269,14 +280,6 @@ def test_endpoint_checks_do_not_request_fetched_urls_again(store):
     assert head_b.called
     assert results[result_key(A)].sha256 == sha(ZIP)
     assert results[result_key(B)].method == "HEAD"
-
-
-def test_sniff():
-    assert sniff(b"PK\x03\x04rest") == "zip"
-    assert sniff(b"  \n") == "empty"
-    assert sniff(b'{"error": 1}') == "json"
-    assert sniff(b"<?xml version='1.0'?><Error/>") == "xml"
-    assert sniff(b"<!DOCTYPE html>") == "html"
 
 
 @respx.mock

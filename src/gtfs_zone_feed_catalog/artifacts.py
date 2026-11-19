@@ -201,7 +201,7 @@ def _state_rows(feed: Feed) -> set[str]:
 def feed_content(
     feed: Feed, contents: dict[str, FeedContent] | None
 ) -> FeedContent | None:
-    """The content report for the feed's best reported schedule URL."""
+    """The content of the feed's best schedule URL that has one."""
     for url in feed.urls.get("scheduled", ()):
         if content := (contents or {}).get(normalize_url(url) or url):
             return content
@@ -458,7 +458,7 @@ def summary_document(
                 "realtime": sum(1 for feed in feeds if set(feed.urls) - {"scheduled"}),
                 "placed": feeds_placed,
                 "unplaced": len(feeds) - feeds_placed,
-                # Only feeds timetable-sites builds a site from have a content state.
+                # Only feeds with a stored or site-built schedule have a content state.
                 "by_content": dict(by_content),
             },
         }

@@ -6,8 +6,8 @@ per catalog and once per realtime entity type. Rows join a feed through a
 union-find over five kinds of evidence, and nothing else:
 
 - a shared URL (``urls.link_key``), of any kind, in any catalog;
-- byte-identical schedules: scheduled URLs whose last ok download had the same
-  sha256 in ``feed_contents``;
+- byte-identical schedules: scheduled URLs whose stored zip has the same
+  sha256 in ``feed_contents`` (the same day's download, from ``feed_facts``);
 - a realtime row's ``feed_references`` to a static row of its catalog: a
   Mobility Database reference, or a Transitland operator's only schedule;
 - realtime URLs that differ only in a final entity-type segment
@@ -83,10 +83,11 @@ class Feed:
     subtitle: str = ""
 
 
-def _ok_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
-    """The sha256 of `url`'s last download when it was ok, else ""."""
+def _zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
+    """The sha256 of `url`'s last downloaded zip, readable or not, else "".
+    Identical non-zip bodies (one host's error page) never link."""
     content = (contents or {}).get(normalize_url(url) or url)
-    return content.sha256 if content and content.outcome == "ok" else ""
+    return content.sha256 if content and content.outcome != "not_zip" else ""
 
 
 class _UnionFind:
@@ -119,7 +120,7 @@ def group(
         for role, url in row.urls.items():
             if key := link_key(url):
                 links[("url", key)].append(row.source_id)
-            if role == "scheduled" and (sha := _ok_sha256(url, contents)):
+            if role == "scheduled" and (sha := _zip_sha256(url, contents)):
                 links[("sha", sha)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)

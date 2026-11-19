@@ -14,6 +14,7 @@ dependencies = [
     "alembic>=1.14",
     "psycopg2-binary>=2.9",
     "gtfs-zone-db-models",
+    "gtfs-zone-feed-fetch",
     "obstore>=0.12",
     "anyascii>=0.3.3",
     "pykakasi>=2.3.0",
@@ -21,6 +22,7 @@ dependencies = [
 
 [tool.uv.sources]
 gtfs-zone-db-models = { git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git", tag = "v0.4.0" }
+gtfs-zone-feed-fetch = { git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git", tag = "v0.1.1" }
 
 [dependency-groups]
 dev = [

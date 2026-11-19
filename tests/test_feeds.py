@@ -182,6 +182,18 @@ def test_failed_or_unhashed_downloads_do_not_link():
     assert len(group(rows, unhashed)) == 2
 
 
+def test_identical_zips_link_whether_or_not_they_read():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://s3.example.org/a.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    unreadable = {
+        url: content(url, "ab", outcome="missing_files")
+        for url in ("https://s3.example.org/a.zip", "http://a.org/g.zip")
+    }
+    assert len(group(rows, unreadable)) == 1
+
+
 def test_two_feeds_joined_again_take_the_lower_id():
     existing = {"f-b": {"md:mdb-1:static"}, "f-a": {"tl:f-a:static"}}
     assert assign_ids([["md:mdb-1:static", "tl:f-a:static"]], existing) == ["f-a"]
