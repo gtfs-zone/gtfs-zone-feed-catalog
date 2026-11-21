@@ -83,7 +83,7 @@ class Feed:
     subtitle: str = ""
 
 
-def _zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
+def zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
     """The sha256 of `url`'s last downloaded zip, readable or not, else "".
     Identical non-zip bodies (one host's error page) never link."""
     content = (contents or {}).get(normalize_url(url) or url)
@@ -120,7 +120,7 @@ def group(
         for role, url in row.urls.items():
             if key := link_key(url):
                 links[("url", key)].append(row.source_id)
-            if role == "scheduled" and (sha := _zip_sha256(url, contents)):
+            if role == "scheduled" and (sha := zip_sha256(url, contents)):
                 links[("sha", sha)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)

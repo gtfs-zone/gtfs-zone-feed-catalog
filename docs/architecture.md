@@ -18,6 +18,7 @@ order:
 | `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags, kept as `gtfs/<sha256>.facts.json` |
 | `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
+| `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
 
