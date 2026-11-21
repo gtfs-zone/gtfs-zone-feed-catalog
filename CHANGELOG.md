@@ -1,3 +1,9 @@
+## v0.12.1 (2026-11-21)
+
+### Fix
+
+- **ntd**: read the weblinks dataset with one bare GET
+
 ## v0.12.0 (2026-11-19)
 
 ### Feat
