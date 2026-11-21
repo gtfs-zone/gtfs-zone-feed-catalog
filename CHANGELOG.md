@@ -1,3 +1,9 @@
+## v0.14.0 (2026-11-21)
+
+### Feat
+
+- **alerts**: post failed Dagster runs in every code location to Telegram
+
 ## v0.13.0 (2026-11-21)
 
 ### Feat
