@@ -1,3 +1,9 @@
+## v0.13.0 (2026-11-21)
+
+### Feat
+
+- **overlap**: source_overlap asset shows catalog overlap in the Dagster UI
+
 ## v0.12.1 (2026-11-21)
 
 ### Fix
