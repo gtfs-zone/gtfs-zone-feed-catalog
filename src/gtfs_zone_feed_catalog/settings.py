@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     gatus_endpoint_key: str = "data_catalog-publish"
     gatus_token: str = ""
 
+    # Telegram chat a failed Dagster run in any code location is posted to, and
+    # the UI the message links to. An empty token disables the posts.
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    dagster_url: str = "https://dagster.gtfs.zone"
+
     # The object store the published artifacts are written to is configured by
     # gtfs_zone_db_models.object_store.ObjectStoreSettings, off the same .env:
     # S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION. Not

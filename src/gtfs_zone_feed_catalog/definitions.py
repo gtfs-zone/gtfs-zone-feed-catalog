@@ -1,9 +1,10 @@
 """Dagster entrypoint. The code server and ``dagster dev`` both load this module.
 
 Assets are collected by walking ``gtfs_zone_feed_catalog.assets``, so adding an asset is
-adding a module. One job over all of them, on one daily schedule: there is no
-sensor, because the UI's re-execute button is the retry mechanism and a catalog
-that is late by an hour is not worth a second trigger path.
+adding a module. One job over all of them, on one daily schedule. Nothing
+retries a run: the UI's re-execute button is the retry mechanism, and a catalog
+that is late by an hour is not worth a second trigger path. The one sensor,
+``run_failure_alert``, only reports failed runs in every code location.
 
 The hour is late-UTC, which is the small hours across North America where most
 of the checked hosts are. Forty thousand requests is easier on someone else's
@@ -20,6 +21,7 @@ from dagster import (
 )
 
 from gtfs_zone_feed_catalog import assets
+from gtfs_zone_feed_catalog.failure_alert import run_failure_alert
 
 ALL_ASSETS = load_assets_from_package_module(assets)
 
@@ -41,4 +43,9 @@ daily_schedule = ScheduleDefinition(
     default_status=DefaultScheduleStatus.RUNNING,
 )
 
-defs = Definitions(assets=ALL_ASSETS, jobs=[daily_catalog], schedules=[daily_schedule])
+defs = Definitions(
+    assets=ALL_ASSETS,
+    jobs=[daily_catalog],
+    schedules=[daily_schedule],
+    sensors=[run_failure_alert],
+)
