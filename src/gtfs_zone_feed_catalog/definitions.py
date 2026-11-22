@@ -7,6 +7,11 @@ retries a run: the UI's re-execute button is the retry mechanism, and a catalog
 that is late by an hour is not worth a second trigger path. The one sensor,
 ``run_failure_alert``, only reports failed runs in every code location.
 
+With ``ZIPS_S3_ENDPOINT`` set, asset values live in the schedule bucket
+(``io_manager.StoreIOManager``), so any asset can be rerun after a rollout;
+without it, Dagster's default filesystem IO manager keeps them under
+``DAGSTER_HOME``.
+
 The hour is late-UTC, which is the small hours across North America where most
 of the checked hosts are. Forty thousand requests is easier on someone else's
 origin outside their peak.
@@ -20,9 +25,12 @@ from dagster import (
     define_asset_job,
     load_assets_from_package_module,
 )
+from gtfs_zone_db_models.object_store import ObjectStore
 
 from gtfs_zone_feed_catalog import assets
 from gtfs_zone_feed_catalog.failure_alert import run_failure_alert
+from gtfs_zone_feed_catalog.io_manager import StoreIOManager
+from gtfs_zone_feed_catalog.zips import ZipStoreSettings
 
 ALL_ASSETS = load_assets_from_package_module(assets)
 
@@ -61,8 +69,16 @@ weekly_localities_schedule = ScheduleDefinition(
     default_status=DefaultScheduleStatus.RUNNING,
 )
 
+zip_settings = ZipStoreSettings()
+resources = (
+    {"io_manager": StoreIOManager(ObjectStore(zip_settings))}
+    if zip_settings.s3_endpoint
+    else {}
+)
+
 defs = Definitions(
     assets=ALL_ASSETS,
+    resources=resources,
     jobs=[daily_catalog, weekly_localities],
     schedules=[daily_schedule, weekly_localities_schedule],
     sensors=[run_failure_alert],

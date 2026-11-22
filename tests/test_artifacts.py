@@ -415,6 +415,53 @@ def test_a_search_entry_carries_the_content_reports_place_tags():
     assert "pt" not in artifacts.search_entry(feed, {})
 
 
+def test_agencies_and_overlaps_reach_feeds_and_search():
+    other = Source(
+        source_id="md:mdb-9:static",
+        catalog="mobilitydatabase",
+        kind="static",
+        feed_id="mdb-9",
+        name="City",
+        urls={"scheduled": "https://city.org/g.zip"},
+    )
+
+    def facts(url: str, *names: str) -> FeedContent:
+        return FeedContent(
+            url=url,
+            outcome="ok",
+            checked=date(2026, 11, 15),
+            since=date(2026, 11, 1),
+            facts={
+                "agencies": [{"name": name} for name in names],
+                "location": {"bbox": [0, 0, 1, 1]},
+            },
+        )
+
+    contents = {
+        "https://a.org/gtfs.zip": facts("https://a.org/gtfs.zip", "Metro", "City Bus"),
+        "https://city.org/g.zip": facts("https://city.org/g.zip", "City Bus"),
+    }
+    agg, city = sorted(
+        build_feeds([STATIC, other], {}, {}, contents),
+        key=lambda feed: len(feed.agencies),
+        reverse=True,
+    )
+    entry = artifacts.feed_entry(agg, {}, contents)
+    assert entry["agencies"] == ["City Bus", "Metro"]
+    assert entry["agencyCount"] == 2
+    assert entry["overlaps"] == [
+        {"feedId": city.feed_id, "kind": "contains", "agencies": ["City Bus"]}
+    ]
+    search = artifacts.search_entry(city, {}, contents)
+    assert (search["ac"], search["ov"]) == (1, [[agg.feed_id, "containedIn"]])
+
+    (alone,) = build_feeds([STATIC], {}, {})
+    assert not {"agencies", "agencyCount", "overlaps"} & set(
+        artifacts.feed_entry(alone, {})
+    )
+    assert not {"ac", "ov"} & set(artifacts.search_entry(alone, {}))
+
+
 def test_the_summary_counts_ntd_rows_and_links_no_catalog_page():
     ntd = Source(
         source_id="ntd:00001-abcdef:static",

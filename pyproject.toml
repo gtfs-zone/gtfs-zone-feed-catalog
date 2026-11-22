@@ -64,7 +64,7 @@ paths = ["src"]
 exclude = ["*/history/models.py", "*/alembic/versions/*"]
 # Used only through a framework: routes, validators, tasks, ORM fields
 ignore_decorators = ["@app.*", "@router.*", "@field_validator", "@model_validator", "@asset"]
-ignore_names = ["cls", "model_config", "defs", "last_checked", "download_url", "s3_bucket", "fetched"]
+ignore_names = ["cls", "model_config", "defs", "last_checked", "download_url", "s3_bucket", "fetched", "handle_output", "load_input"]
 
 [tool.deptry]
 per_rule_ignores.DEP002 = [

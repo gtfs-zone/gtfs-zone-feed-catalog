@@ -9,7 +9,11 @@ from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP, fold,
 from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
 from gtfs_zone_feed_catalog.assets.feeds import (
+    CONTAINED_IN,
+    CONTAINS,
     PARTIAL,
+    SHARES,
+    Overlap,
     assign_ids,
     build_feeds,
     feed_state,
@@ -17,6 +21,7 @@ from gtfs_zone_feed_catalog.assets.feeds import (
     load_existing,
     load_moved,
     moved_to,
+    normalize_agency,
     persist,
 )
 from gtfs_zone_feed_catalog.catalog import Place, Source
@@ -496,3 +501,112 @@ def test_a_fallback_subtitle_prefers_the_schedules_agency_then_the_file_name():
     feeds = {f.urls["scheduled"][0]: f for f in build_feeds([a, b], {}, {}, contents)}
     assert feeds["https://a.org/east.zip"].subtitle == "Metro East"
     assert feeds["https://a.org/west.zip"].subtitle == "west"
+
+
+def test_same_cleaned_data_at_different_bytes_is_one_feed():
+    rows = [
+        row("tl:f-a:static", kind="static", scheduled="https://s3.example.org/a.zip"),
+        row("md:mdb-1:static", kind="static", scheduled="http://a.org/g.zip"),
+    ]
+    same = {
+        "https://s3.example.org/a.zip": content(
+            "https://s3.example.org/a.zip", "aa", cleanedHash="c1"
+        ),
+        "http://a.org/g.zip": content("http://a.org/g.zip", "bb", cleanedHash="c1"),
+    }
+    assert len(group(rows, same)) == 1
+    assert len(group(rows, same, clean=False)) == 2
+
+    unreadable = {
+        url: replace(found, outcome="missing_files") for url, found in same.items()
+    }
+    assert len(group(rows, unreadable)) == 2
+    different = dict(
+        same, **{"http://a.org/g.zip": content("http://a.org/g.zip", "bb")}
+    )
+    assert len(group(rows, different)) == 2
+
+
+def agencies(*names: str) -> list[dict]:
+    return [{"name": name} for name in names]
+
+
+def located(url: str, bbox: list[float], *names: str) -> FeedContent:
+    return content(url, agencies=agencies(*names), location={"bbox": bbox})
+
+
+def test_normalize_agency_drops_accents_case_and_punctuation():
+    assert normalize_agency("  Münchner Verkehrs-Gesellschaft (MVG) ") == (
+        "munchner verkehrs gesellschaft mvg"
+    )
+
+
+def test_agencies_and_bbox_come_from_every_scheduled_url():
+    two = [
+        row("tl:f-a:static", kind="static", scheduled="https://a.org/1.zip"),
+        replace(
+            row("tl:f-a:static2", kind="static", scheduled="https://a.org/2.zip"),
+            feed_id="f-a",
+        ),
+    ]
+    contents = {
+        "https://a.org/1.zip": located("https://a.org/1.zip", [0, 0, 1, 1], "A", "B"),
+        "https://a.org/2.zip": located("https://a.org/2.zip", [2, 2, 3, 3], "b", "C"),
+    }
+    (feed,) = build_feeds(two, {}, {}, contents)
+    assert feed.agencies == ("A", "B", "C")
+    assert feed.bbox == (0, 0, 3, 3)
+
+
+def test_an_aggregate_contains_the_feeds_whose_agencies_it_has():
+    rows = [
+        row("md:mdb-1:static", kind="static", scheduled="https://agg.org/all.zip"),
+        row("md:mdb-2:static", kind="static", scheduled="https://city.org/g.zip"),
+        row("md:mdb-3:static", kind="static", scheduled="https://nb.org/g.zip"),
+        row("md:mdb-4:static", kind="static", scheduled="https://far.org/g.zip"),
+    ]
+    contents = {
+        "https://agg.org/all.zip": located(
+            "https://agg.org/all.zip", [0, 0, 10, 10], "City Bus", "Rail Co"
+        ),
+        "https://city.org/g.zip": located(
+            "https://city.org/g.zip", [1, 1, 2, 2], "city bus"
+        ),
+        "https://nb.org/g.zip": located(
+            "https://nb.org/g.zip", [3, 3, 4, 4], "Rail Co", "Ferry"
+        ),
+        # Same name, far away: no overlap.
+        "https://far.org/g.zip": located(
+            "https://far.org/g.zip", [50, 50, 51, 51], "City Bus"
+        ),
+    }
+    feeds = build_feeds(rows, {}, {}, contents)
+    by_url = {feed.urls["scheduled"][0]: feed for feed in feeds}
+    agg = by_url["https://agg.org/all.zip"]
+    city = by_url["https://city.org/g.zip"]
+    nb = by_url["https://nb.org/g.zip"]
+    far = by_url["https://far.org/g.zip"]
+
+    assert set(agg.overlaps) == {
+        Overlap(city.feed_id, CONTAINS, ("City Bus",)),
+        Overlap(nb.feed_id, SHARES, ("Rail Co",)),
+    }
+    assert city.overlaps == (Overlap(agg.feed_id, CONTAINED_IN, ("city bus",)),)
+    assert nb.overlaps == (Overlap(agg.feed_id, SHARES, ("Rail Co",)),)
+    assert far.overlaps == ()
+
+
+def test_a_multi_agency_feed_keeps_its_catalog_name():
+    md = replace(
+        row("md:mdb-784:static", kind="static", scheduled="https://a.org/de.zip"),
+        name="Rursee-Schifffahrt KG",
+        operator_name="Rursee-Schifffahrt KG",
+    )
+    facts = {
+        "agencies": agencies("Rursee-Schifffahrt KG", "MVG", "VRR"),
+        "feedInfo": {"publisher": "DELFI e.V."},
+    }
+    contents = {"https://a.org/de.zip": content("https://a.org/de.zip", **facts)}
+    feed = build_feeds([md], {}, {}, contents)[0]
+    assert feed.name == "Rursee-Schifffahrt KG"
+    assert len(feed.agencies) == 3

@@ -262,6 +262,15 @@ def feed_entry(
         entry["neverUp"] = True
     if (content := feed_content(feed, contents)) is not None:
         entry["content"] = content_fields(content)
+    if feed.agencies:
+        # Over every schedule URL, one per normalized name.
+        entry["agencies"] = list(feed.agencies)
+        entry["agencyCount"] = len(feed.agencies)
+    if feed.overlaps:
+        entry["overlaps"] = [
+            {"feedId": o.feed_id, "kind": o.kind, "agencies": list(o.agencies)}
+            for o in feed.overlaps
+        ]
     members = [rows[m] for m in feed.members if m in (rows or {})]
     if licenses := sorted({row.license_url for row in members if row.license_url}):
         entry["licenses"] = licenses
@@ -398,6 +407,10 @@ def search_entry(
         entry["since"] = since.date().isoformat()
     if feed_never_up(feed, statuses):
         entry["nu"] = True
+    if feed.agencies:
+        entry["ac"] = len(feed.agencies)
+    if feed.overlaps:
+        entry["ov"] = [[o.feed_id, o.kind] for o in feed.overlaps]
     return entry
 
 

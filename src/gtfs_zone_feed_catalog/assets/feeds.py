@@ -3,11 +3,13 @@
 Catalog rows stay the raw layer (see ``sources``). A logical feed bundles the
 rows that describe the same system, so a consumer lists it once instead of once
 per catalog and once per realtime entity type. Rows join a feed through a
-union-find over five kinds of evidence, and nothing else:
+union-find over six kinds of evidence, and nothing else:
 
 - a shared URL (``urls.link_key``), of any kind, in any catalog;
 - byte-identical schedules: scheduled URLs whose stored zip has the same
   sha256 in ``feed_contents`` (the same day's download, from ``feed_facts``);
+- identical cleaned data: readable schedules with the same ``cleanedHash``
+  (every GTFS file but feed_info, ignoring row and column order and packaging);
 - a realtime row's ``feed_references`` to a static row of its catalog: a
   Mobility Database reference, or a Transitland operator's only schedule;
 - realtime URLs that differ only in a final entity-type segment
@@ -25,16 +27,23 @@ is minted only for a group that shares none. A feed that loses its group keeps
 its row, and its remaining members, for the retention window, so a group that
 comes back gets its old id. A feed whose members joined another feed records
 that feed as ``moved_to``, so consumers can follow it.
+
+Feeds that are not joined can still overlap: a feed whose agencies include
+another's (an aggregate such as DELFI and a city feed in it), or two feeds
+sharing an agency, with intersecting station bboxes. Overlaps are published,
+never joined.
 """
 
 import hashlib
 import logging
+import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from itertools import combinations
 from urllib.parse import urlsplit
 
-from dagster import asset
+from dagster import AssetExecutionContext, MetadataValue, asset
 from sqlalchemy import delete, insert, select, update
 
 from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP
@@ -54,6 +63,21 @@ PARTIAL = "partial"
 
 # Source id prefix of the static rows each catalog's feed_references name.
 REFERENCE_PREFIXES = {"mobilitydatabase": "md", "transitland": "tl"}
+
+# Overlap kinds, from the point of view of the feed that lists the overlap.
+CONTAINS = "contains"
+CONTAINED_IN = "containedIn"
+SHARES = "shares"
+
+type Bbox = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True, slots=True)
+class Overlap:
+    feed_id: str
+    kind: str
+    # Display names of the agencies both feeds have, sorted.
+    agencies: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +105,12 @@ class Feed:
     # What tells this feed apart from others of the same name: a Mobility
     # Database feed_name such as "Rail" or "Bus".
     subtitle: str = ""
+    # Agency display names over every scheduled URL's facts, one per
+    # normalized name, sorted by it.
+    agencies: tuple[str, ...] = ()
+    # Union of those URLs' station bboxes (min lon, min lat, max lon, max lat).
+    bbox: Bbox | None = None
+    overlaps: tuple[Overlap, ...] = ()
 
 
 def zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
@@ -88,6 +118,21 @@ def zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
     Identical non-zip bodies (one host's error page) never link."""
     content = (contents or {}).get(normalize_url(url) or url)
     return content.sha256 if content and content.outcome != "not_zip" else ""
+
+
+def cleaned_hash(url: str, contents: dict[str, FeedContent] | None) -> str:
+    """The cleaned-data hash of `url`'s last readable zip, else ""."""
+    content = (contents or {}).get(normalize_url(url) or url)
+    if not content or content.outcome != "ok":
+        return ""
+    return content.facts.get("cleanedHash") or ""
+
+
+def normalize_agency(name: str) -> str:
+    """`name` without accents, case or punctuation, spaces collapsed."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    text = "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+    return " ".join("".join(c if c.isalnum() else " " for c in text).split())
 
 
 class _UnionFind:
@@ -109,9 +154,12 @@ class _UnionFind:
 
 
 def group(
-    rows: list[Source], contents: dict[str, FeedContent] | None = None
+    rows: list[Source],
+    contents: dict[str, FeedContent] | None = None,
+    clean: bool = True,
 ) -> list[list[Source]]:
-    """Rows describing the same system, each group sorted by source id."""
+    """Rows describing the same system, each group sorted by source id.
+    `clean` False leaves out cleaned-hash links, to count what they join."""
     by_id = {row.source_id: row for row in rows}
     links: dict[tuple[str, ...], list[str]] = defaultdict(list)
 
@@ -122,6 +170,8 @@ def group(
                 links[("url", key)].append(row.source_id)
             if role == "scheduled" and (sha := zip_sha256(url, contents)):
                 links[("sha", sha)].append(row.source_id)
+            if role == "scheduled" and clean and (h := cleaned_hash(url, contents)):
+                links[("clean", h)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 links[("rt", sibling)].append(row.source_id)
         prefix = REFERENCE_PREFIXES.get(row.catalog)
@@ -317,6 +367,88 @@ def tell_apart(
     ]
 
 
+def _contents(
+    feed_urls: list[str], contents: dict[str, FeedContent] | None
+) -> list[FeedContent]:
+    """The contents of `feed_urls` that have one, in order."""
+    return [
+        found
+        for url in feed_urls
+        if (found := (contents or {}).get(normalize_url(url) or url))
+    ]
+
+
+def feed_agencies(found: list[FeedContent]) -> tuple[str, ...]:
+    """Agency names over `found`, one per normalized name (the first spelling
+    seen), sorted by it."""
+    names: dict[str, str] = {}
+    for content in found:
+        for agency in content.facts.get("agencies") or []:
+            name = (agency.get("name") or "").strip()
+            if name and (key := normalize_agency(name)):
+                names.setdefault(key, name)
+    return tuple(names[key] for key in sorted(names))
+
+
+def feed_bbox(found: list[FeedContent]) -> Bbox | None:
+    """The union of `found`'s station bboxes."""
+    boxes = [
+        box
+        for content in found
+        if len(box := (content.facts.get("location") or {}).get("bbox") or []) == 4
+    ]
+    if not boxes:
+        return None
+    return (
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
+
+
+def _intersect(a: Bbox, b: Bbox) -> bool:
+    return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+
+def overlaps(feeds: list[Feed]) -> dict[str, tuple[Overlap, ...]]:
+    """{feed id: its overlaps}: feeds sharing a normalized agency name, with
+    intersecting bboxes. One whose agencies are a strict subset of the other's
+    is containedIn it, and the other contains it; any other shared agency is
+    shares. A feed without agencies or a bbox overlaps nothing."""
+    keys = {
+        feed.feed_id: {normalize_agency(name): name for name in feed.agencies}
+        for feed in feeds
+    }
+    boxes = {feed.feed_id: feed.bbox for feed in feeds}
+    by_agency: dict[str, list[str]] = defaultdict(list)
+    for feed in feeds:
+        if feed.bbox is not None:
+            for key in keys[feed.feed_id]:
+                by_agency[key].append(feed.feed_id)
+
+    pairs = {pair for ids in by_agency.values() for pair in combinations(ids, 2)}
+    found: dict[str, list[Overlap]] = defaultdict(list)
+    for a, b in sorted(pairs):
+        box_a, box_b = boxes[a], boxes[b]
+        if box_a is None or box_b is None or not _intersect(box_a, box_b):
+            continue
+        mine, theirs = keys[a].keys(), keys[b].keys()
+        shared = mine & theirs
+        if mine < theirs:
+            kind_a, kind_b = CONTAINED_IN, CONTAINS
+        elif theirs < mine:
+            kind_a, kind_b = CONTAINS, CONTAINED_IN
+        else:
+            kind_a = kind_b = SHARES
+        found[a].append(Overlap(b, kind_a, tuple(sorted(keys[a][k] for k in shared))))
+        found[b].append(Overlap(a, kind_b, tuple(sorted(keys[b][k] for k in shared))))
+    return {
+        feed_id: tuple(sorted(items, key=lambda o: o.feed_id))
+        for feed_id, items in found.items()
+    }
+
+
 def build_feed(
     feed_id: str,
     members: list[Source],
@@ -373,14 +505,9 @@ def build_feed(
         None,
     )
 
-    content = next(
-        (
-            found
-            for url in ranked.get("scheduled", [])
-            if (found := (contents or {}).get(normalize_url(url) or url))
-        ),
-        None,
-    )
+    found = _contents(ranked.get("scheduled", []), contents)
+    content = found[0] if found else None
+    agencies = feed_agencies(found)
     name = feed_name(members, content)
     role_state = {role: _any_up(role_states) for role, role_states in states.items()}
 
@@ -397,6 +524,8 @@ def build_feed(
         last_modified=best.last_modified if best else None,
         auth_roles=auth_roles,
         subtitle=feed_subtitle(members, name),
+        agencies=agencies,
+        bbox=feed_bbox(found),
     )
 
 
@@ -518,7 +647,29 @@ def build_feeds(
         build_feed(feed_id, g, results, contents)
         for feed_id, g in zip(ids, groups, strict=True)
     ]
-    return sorted(tell_apart(built, groups, contents), key=lambda feed: feed.feed_id)
+    told = tell_apart(built, groups, contents)
+    found = overlaps(told)
+    told = [replace(feed, overlaps=found.get(feed.feed_id, ())) for feed in told]
+    return sorted(told, key=lambda feed: feed.feed_id)
+
+
+def load_names() -> dict[str, str]:
+    """{feed id: its stored name} for present feeds."""
+    with get_session_factory()() as session:
+        return dict(
+            session.execute(
+                select(FeedRecord.feed_id, FeedRecord.name).where(FeedRecord.present)
+            ).all()
+        )
+
+
+def _renames_table(renamed: list[tuple[str, str, str]]) -> str:
+    lines = ["| feed | before | after |", "| --- | --- | --- |"]
+    lines += [
+        f"| {feed_id} | {before.replace('|', '/')} | {after.replace('|', '/')} |"
+        for feed_id, before, after in renamed
+    ]
+    return "\n".join(lines)
 
 
 @asset(
@@ -527,16 +678,43 @@ def build_feeds(
     deps=["check_history"],
 )
 def feeds(
+    context: AssetExecutionContext,
     sources: list[Source],
     endpoint_checks: dict[str, CheckResult],
     feed_contents: dict[str, FeedContent],
 ) -> list[Feed]:
     existing = load_existing() if settings.database_url else {}
+    before = load_names() if settings.database_url else {}
     result = build_feeds(sources, endpoint_checks, existing, feed_contents)
     if settings.database_url:
         persist(result)
     else:
         log.warning("DATABASE_URL is unset; feed ids are minted fresh each run")
+
+    clean_joins = len(group(sources, feed_contents, clean=False)) - len(result)
+    kinds = Counter(o.kind for feed in result for o in feed.overlaps)
+    renamed = sorted(
+        (feed.feed_id, before[feed.feed_id], feed.name)
+        for feed in result
+        if feed.feed_id in before and before[feed.feed_id] != feed.name
+    )
+    log.info(
+        "%d groups joined by cleaned hash only; overlaps %s; %d renamed",
+        clean_joins,
+        dict(sorted(kinds.items())),
+        len(renamed),
+    )
+    context.add_output_metadata(
+        {
+            "feeds": len(result),
+            "clean_joins": clean_joins,
+            "multi_agency": sum(1 for feed in result if len(feed.agencies) > 1),
+            "with_overlaps": sum(1 for feed in result if feed.overlaps),
+            **{f"overlaps_{kind}": count for kind, count in sorted(kinds.items())},
+            "renamed": len(renamed),
+            "renames": MetadataValue.md(_renames_table(renamed)),
+        }
+    )
 
     sizes = sorted((len(feed.members) for feed in result), reverse=True)
     realtime = sum(1 for feed in result if set(feed.urls) & set(RT_ROLES))
