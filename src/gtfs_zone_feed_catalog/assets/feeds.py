@@ -8,7 +8,7 @@ union-find over six kinds of evidence, and nothing else:
 - a shared URL (``urls.link_key``), of any kind, in any catalog;
 - byte-identical schedules: scheduled URLs whose stored zip has the same
   sha256 in ``feed_contents`` (the same day's download, from ``feed_facts``);
-- identical cleaned data: readable schedules with the same ``cleanedHash``
+- identical cleaned data: readable schedules with trips and the same ``cleanedHash``
   (every GTFS file but feed_info, ignoring row and column order and packaging);
 - a realtime row's ``feed_references`` to a static row of its catalog: a
   Mobility Database reference, or a Transitland operator's only schedule;
@@ -121,9 +121,12 @@ def zip_sha256(url: str, contents: dict[str, FeedContent] | None) -> str:
 
 
 def cleaned_hash(url: str, contents: dict[str, FeedContent] | None) -> str:
-    """The cleaned-data hash of `url`'s last readable zip, else ""."""
+    """The cleaned-data hash of `url`'s last readable zip, else "". A schedule
+    without trips has none: placeholder feeds share their few rows."""
     content = (contents or {}).get(normalize_url(url) or url)
     if not content or content.outcome != "ok":
+        return ""
+    if not (content.facts.get("counts") or {}).get("trips"):
         return ""
     return content.facts.get("cleanedHash") or ""
 

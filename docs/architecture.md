@@ -91,7 +91,7 @@ joins rows on exactly seven kinds of evidence:
 - a shared URL (http and https unified), any kind, any catalog;
 - byte-identical schedules: scheduled URLs whose stored zip has the same
   sha256 (the same day's download);
-- identical cleaned data: readable schedules with the same `cleanedHash`
+- identical cleaned data: readable schedules with trips and the same `cleanedHash`
   (`gtfs_zone_feed_fetch.cleaned`: every GTFS file but feed_info, row and
   column order, BOM, CRLF, quoting and zip layout ignored, ids and column sets
   kept);

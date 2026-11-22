@@ -503,6 +503,9 @@ def test_a_fallback_subtitle_prefers_the_schedules_agency_then_the_file_name():
     assert feeds["https://a.org/west.zip"].subtitle == "west"
 
 
+TRIPS = {"trips": 3}
+
+
 def test_same_cleaned_data_at_different_bytes_is_one_feed():
     rows = [
         row("tl:f-a:static", kind="static", scheduled="https://s3.example.org/a.zip"),
@@ -510,11 +513,20 @@ def test_same_cleaned_data_at_different_bytes_is_one_feed():
     ]
     same = {
         "https://s3.example.org/a.zip": content(
-            "https://s3.example.org/a.zip", "aa", cleanedHash="c1"
+            "https://s3.example.org/a.zip", "aa", cleanedHash="c1", counts=TRIPS
         ),
-        "http://a.org/g.zip": content("http://a.org/g.zip", "bb", cleanedHash="c1"),
+        "http://a.org/g.zip": content(
+            "http://a.org/g.zip", "bb", cleanedHash="c1", counts=TRIPS
+        ),
     }
     assert len(group(rows, same)) == 1
+
+    # Schedules without trips never join on the hash.
+    empty = {
+        url: replace(found, facts={**found.facts, "counts": {"trips": 0}})
+        for url, found in same.items()
+    }
+    assert len(group(rows, empty)) == 2
     assert len(group(rows, same, clean=False)) == 2
 
     unreadable = {
