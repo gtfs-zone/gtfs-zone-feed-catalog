@@ -12,8 +12,9 @@ artifacts to object storage at `data.gtfs.zone`.
 
 Every consumer used to ship its own copy of a build-time feed catalog with no
 liveness signal. This replaces that: one pipeline produces `sources.json`,
-`feeds.json`, `search.json`, `status.json`, `summary.json` and a `manifest.json` consumers
-poll to decide whether to refetch, plus deduplicated dated snapshots.
+`feeds.json`, `search.json`, `status.json`, `summary.json`, `source-stats.json`
+and a `manifest.json` consumers poll to decide whether to refetch, plus
+deduplicated dated snapshots.
 
 Every schedule is downloaded once a day with a conditional GET, and the latest
 body per URL is kept in a private bucket for the apps that read schedules; that

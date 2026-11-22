@@ -156,6 +156,34 @@ class _UnionFind:
             self._parent[root] = roots[0]
 
 
+def links(
+    rows: list[Source],
+    contents: dict[str, FeedContent] | None = None,
+    clean: bool = True,
+) -> dict[tuple[str, ...], list[str]]:
+    """Source ids per piece of join evidence, keyed by (kind, value...). Kinds:
+    feed, url, sha, clean, rt, ref. `clean` False leaves out cleaned hashes."""
+    by_id = {row.source_id: row for row in rows}
+    found: dict[tuple[str, ...], list[str]] = defaultdict(list)
+
+    for row in rows:
+        found[("feed", row.catalog, row.feed_id)].append(row.source_id)
+        for role, url in row.urls.items():
+            if key := link_key(url):
+                found[("url", key)].append(row.source_id)
+            if role == "scheduled" and (sha := zip_sha256(url, contents)):
+                found[("sha", sha)].append(row.source_id)
+            if role == "scheduled" and clean and (h := cleaned_hash(url, contents)):
+                found[("clean", h)].append(row.source_id)
+            if role in RT_ROLES and (sibling := rt_sibling_key(url)):
+                found[("rt", sibling)].append(row.source_id)
+        prefix = REFERENCE_PREFIXES.get(row.catalog)
+        for ref in row.feed_references if prefix else ():
+            if (target := f"{prefix}:{ref}:static") in by_id:
+                found[("ref", row.source_id, ref)] += [row.source_id, target]
+    return found
+
+
 def group(
     rows: list[Source],
     contents: dict[str, FeedContent] | None = None,
@@ -164,26 +192,8 @@ def group(
     """Rows describing the same system, each group sorted by source id.
     `clean` False leaves out cleaned-hash links, to count what they join."""
     by_id = {row.source_id: row for row in rows}
-    links: dict[tuple[str, ...], list[str]] = defaultdict(list)
-
-    for row in rows:
-        links[("feed", row.catalog, row.feed_id)].append(row.source_id)
-        for role, url in row.urls.items():
-            if key := link_key(url):
-                links[("url", key)].append(row.source_id)
-            if role == "scheduled" and (sha := zip_sha256(url, contents)):
-                links[("sha", sha)].append(row.source_id)
-            if role == "scheduled" and clean and (h := cleaned_hash(url, contents)):
-                links[("clean", h)].append(row.source_id)
-            if role in RT_ROLES and (sibling := rt_sibling_key(url)):
-                links[("rt", sibling)].append(row.source_id)
-        prefix = REFERENCE_PREFIXES.get(row.catalog)
-        for ref in row.feed_references if prefix else ():
-            if (target := f"{prefix}:{ref}:static") in by_id:
-                links[("ref", row.source_id, ref)] += [row.source_id, target]
-
     union = _UnionFind(list(by_id))
-    for members in links.values():
+    for members in links(rows, contents, clean).values():
         union.union(members)
 
     groups: dict[str, list[Source]] = defaultdict(list)

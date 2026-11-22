@@ -41,6 +41,7 @@ def test_a_first_run_writes_every_artifact(store):
         "status.json",
         "search.json",
         "summary.json",
+        "source-stats.json",
     ):
         assert json.loads(store.get(key))
     assert json.loads(store.get("sources.json"))["sources"][0]["rowId"] == (
@@ -58,6 +59,7 @@ def test_a_first_run_writes_every_artifact(store):
         "status.json",
         "search.json",
         "summary.json",
+        "source-stats.json",
         artifacts.SNAPSHOT_INDEX_KEY,
     }
 

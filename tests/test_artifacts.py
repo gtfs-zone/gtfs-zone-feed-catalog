@@ -483,3 +483,108 @@ def test_the_summary_counts_ntd_rows_and_links_no_catalog_page():
     summary = json.loads(artifacts.summary_document([ROW, ntd], {}, [], NOW))
     assert summary["by_catalog"] == {"transitland": 1, "ntd": 1}
     assert artifacts.catalog_url(ntd) is None
+
+
+def stats_row(source_id: str, kind: str = "static", **fields) -> Source:
+    catalog, feed_id, _ = source_id.split(":")
+    return Source(
+        source_id=source_id,
+        catalog={"tl": "transitland", "md": "mobilitydatabase", "ntd": "ntd"}[catalog],
+        kind=kind,
+        feed_id=feed_id,
+        name=source_id,
+        **fields,
+    )
+
+
+def test_source_stats_counts_catalogs_overlap_and_join_evidence():
+    from gtfs_zone_feed_fetch.store import Stored
+
+    def stored(url: str, outcome: str, sha: str = "", size: int = 0) -> Stored:
+        return Stored(
+            url=url,
+            checked=NOW.isoformat(),
+            outcome=outcome,
+            key=f"gtfs/{sha}.zip" if sha else "",
+            sha256=sha,
+            bytes=size or None,
+            kind="zip" if sha else "",
+        )
+
+    def ok(url: str, sha: str) -> FeedContent:
+        return FeedContent(
+            url=url, outcome="ok", checked=NOW.date(), since=NOW.date(), sha256=sha
+        )
+
+    us = Place(country_code="US")
+    rows = [
+        # Shared URL: Transitland and the Mobility Database.
+        stats_row("tl:f-a:static", urls={"scheduled": "https://a.org/g.zip"}, place=us),
+        stats_row("md:mdb-1:static", urls={"scheduled": "http://a.org/g.zip"}),
+        # Same bytes at two URLs: Transitland and NTD.
+        stats_row("tl:f-b:static", urls={"scheduled": "https://b.org/g.zip"}),
+        stats_row("ntd:1:static", urls={"scheduled": "https://mirror.org/b.zip"}),
+        # One entry split into static and realtime rows: one entry, no join.
+        stats_row("md:mdb-2:static", urls={"scheduled": "https://c.org/g.zip"}),
+        stats_row("md:mdb-2:rt", kind="rt", urls={"vehicles": "https://c.org/vp"}),
+    ]
+    contents = {
+        "https://b.org/g.zip": ok("https://b.org/g.zip", "bb"),
+        "https://mirror.org/b.zip": ok("https://mirror.org/b.zip", "bb"),
+    }
+    fetched = {
+        "https://a.org/g.zip": stored("https://a.org/g.zip", "not_modified", "aa", 10),
+        "http://a.org/g.zip": stored("http://a.org/g.zip", "not_modified", "aa", 10),
+        "https://b.org/g.zip": stored("https://b.org/g.zip", "ok", "bb", 5),
+        "https://mirror.org/b.zip": stored("https://mirror.org/b.zip", "ok", "bb", 5),
+        "https://c.org/g.zip": stored("https://c.org/g.zip", "too_large"),
+    }
+    feeds = build_feeds(rows, {}, {}, contents)
+    doc = json.loads(
+        artifacts.source_stats_document(rows, feeds, NOW, contents, fetched)
+    )
+
+    tl = doc["catalogs"]["transitland"]
+    assert tl == {
+        "entries": 2,
+        "feeds": 2,
+        "scheduleFeeds": 2,
+        "onlyHere": 0,
+        "fetch": {"not_modified": 1, "ok": 1},
+        "facts": {"ok": 1},
+        "bytes": 15,
+        "distinctBytes": 15,
+        "countries": 1,
+    }
+    md = doc["catalogs"]["mobilitydatabase"]
+    assert (md["entries"], md["feeds"], md["onlyHere"]) == (2, 2, 1)
+    assert md["fetch"] == {"not_modified": 1, "too_large": 1}
+    assert (md["bytes"], md["distinctBytes"]) == (10, 10)
+    assert doc["catalogs"]["ntd"]["bytes"] == 5
+
+    assert doc["combinations"] == [
+        {"catalogs": ["mobilitydatabase"], "feeds": 1},
+        {"catalogs": ["mobilitydatabase", "transitland"], "feeds": 1},
+        {"catalogs": ["ntd", "transitland"], "feeds": 1},
+    ]
+    assert doc["pairs"] == [
+        {
+            "catalogs": ["mobilitydatabase", "transitland"],
+            "feeds": 1,
+            "scheduleUrls": 1,
+            "bodies": 0,
+        },
+        {
+            "catalogs": ["ntd", "transitland"],
+            "feeds": 1,
+            "scheduleUrls": 0,
+            "bodies": 1,
+        },
+    ]
+    assert doc["duplication"] == {
+        "feeds": 3,
+        "multiEntry": 2,
+        "byEvidence": {"sha256": 1, "url": 1},
+        "entriesPerFeed": {"1": 1, "2": 2},
+    }
+    assert "closeDuplicates" not in doc

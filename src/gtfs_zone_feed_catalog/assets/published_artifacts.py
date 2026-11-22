@@ -21,8 +21,10 @@ from dagster import AssetExecutionContext, asset
 from gtfs_zone_db_models.object_store import (
     ObjectNotFound,
     ObjectStore,
+    ObjectStoreError,
     get_object_store,
 )
+from gtfs_zone_feed_fetch.store import Stored
 
 from gtfs_zone_feed_catalog import artifacts, pages
 from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
@@ -31,6 +33,7 @@ from gtfs_zone_feed_catalog.assets.feeds import Feed, load_moved
 from gtfs_zone_feed_catalog.catalog import Source
 from gtfs_zone_feed_catalog.heartbeat import push_heartbeat
 from gtfs_zone_feed_catalog.settings import settings
+from gtfs_zone_feed_catalog.zips import ZipStoreSettings, read_index
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +140,7 @@ def publish(
     generated_at: datetime | None = None,
     contents: dict[str, FeedContent] | None = None,
     moved: dict[str, str] | None = None,
+    fetched: dict[str, Stored] | None = None,
 ) -> dict[str, int]:
     """Write every artifact, and return what a caller wants to report."""
     generated_at = generated_at or artifacts.utcnow()
@@ -153,6 +157,9 @@ def publish(
         "status.json": artifacts.status_document(statuses, generated_at),
         "summary.json": artifacts.summary_document(
             sources, statuses, feeds, generated_at, contents
+        ),
+        "source-stats.json": artifacts.source_stats_document(
+            sources, feeds, generated_at, contents, fetched
         ),
     }
     for key, body in documents.items():
@@ -241,11 +248,25 @@ def publish(
     }
 
 
+def read_fetched() -> dict[str, Stored]:
+    """The schedule bucket's index, or none without the bucket."""
+    zip_settings = ZipStoreSettings()
+    if not zip_settings.s3_endpoint:
+        return {}
+    try:
+        return read_index(ObjectStore(zip_settings))
+    except ObjectStoreError as exc:
+        log.warning("schedule bucket unavailable, no fetch stats: %s", exc)
+        return {}
+
+
 @asset(
     description=(
-        "sources, feeds, search, status, summary, snapshot, manifest, "
-        "feed pages and sitemap"
+        "sources, feeds, search, status, summary, source stats, snapshot, "
+        "manifest, feed pages and sitemap"
     ),
+    # Ordering only: source-stats.json reads the index feed_fetch writes.
+    deps=["feed_fetch"],
 )
 def published_artifacts(
     context: AssetExecutionContext,
@@ -263,6 +284,7 @@ def published_artifacts(
         context.run_id,
         contents=feed_contents,
         moved=load_moved() if settings.database_url else {},
+        fetched=read_fetched(),
     )
     heartbeat = push_heartbeat(settings)
     context.add_output_metadata(

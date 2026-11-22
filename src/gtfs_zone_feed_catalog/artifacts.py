@@ -27,10 +27,16 @@ from typing import TYPE_CHECKING, Any
 
 from gtfs_zone_feed_fetch.localities import ATTRIBUTION as LOCALITIES_ATTRIBUTION
 
+from gtfs_zone_feed_catalog.assets.feeds import links
+from gtfs_zone_feed_catalog.assets.source_overlap import overlap
 from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
 from gtfs_zone_feed_catalog.urls import normalize_url
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from gtfs_zone_feed_fetch.store import Stored
+
     from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
     from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
     from gtfs_zone_feed_catalog.assets.feeds import Feed
@@ -482,6 +488,121 @@ def summary_document(
                 # Only feeds with a stored or site-built schedule have a content state.
                 "by_content": dict(by_content),
             },
+        }
+    )
+
+
+# Join evidence counted in source-stats.json, by `feeds.links` kind. The
+# static and realtime rows of one catalog entry are one entry, not a join.
+EVIDENCE_NAMES = {
+    "url": "url",
+    "sha": "sha256",
+    "clean": "cleanedHash",
+    "ref": "reference",
+    "rt": "realtimeSibling",
+}
+
+
+def _catalog_stats(
+    catalog: str,
+    sources: list[Source],
+    feeds: list[Feed],
+    contents: Mapping[str, FeedContent],
+    fetched: Mapping[str, Stored],
+    listed: int,
+    alone: int,
+) -> dict[str, Any]:
+    own = [s for s in sources if s.catalog == catalog]
+    ids = {s.source_id for s in own}
+    urls = {normalize_url(url) or url for s in own if (url := s.urls.get("scheduled"))}
+    stored = [fetched[key] for key in sorted(urls) if key in fetched]
+    bodies = [entry for entry in stored if entry.key]
+    return {
+        "entries": len({s.feed_id for s in own}),
+        "feeds": sum(1 for feed in feeds if ids.intersection(feed.members)),
+        "scheduleFeeds": listed,
+        "onlyHere": alone,
+        "fetch": dict(Counter(entry.outcome for entry in stored)),
+        "facts": dict(Counter(contents[k].outcome for k in urls if k in contents)),
+        "bytes": sum(entry.bytes or 0 for entry in bodies),
+        "distinctBytes": sum(
+            {entry.sha256: entry.bytes or 0 for entry in bodies}.values()
+        ),
+        "countries": len({s.place.country_code for s in own if s.place.country_code}),
+    }
+
+
+def _duplication(
+    sources: list[Source], feeds: list[Feed], contents: Mapping[str, FeedContent]
+) -> dict[str, Any]:
+    """Feeds built from more than one catalog entry, and which evidence joined
+    two entries of each. A feed counts once per kind of evidence."""
+    entry_of = {s.source_id: (s.catalog, s.feed_id) for s in sources}
+    feed_of = {m: feed.feed_id for feed in feeds for m in feed.members}
+    per_feed = Counter(
+        n
+        for feed in feeds
+        if (n := len({entry_of[m] for m in feed.members if m in entry_of}))
+    )
+    joined = {
+        (feed_of[members[0]], EVIDENCE_NAMES[key[0]])
+        for key, members in links(sources, dict(contents)).items()
+        if key[0] in EVIDENCE_NAMES
+        and members[0] in feed_of
+        and len({entry_of[m] for m in members}) > 1
+    }
+    return {
+        "feeds": len(feeds),
+        "multiEntry": sum(count for n, count in per_feed.items() if n > 1),
+        "byEvidence": dict(sorted(Counter(kind for _, kind in joined).items())),
+        "entriesPerFeed": {str(n): per_feed[n] for n in sorted(per_feed)},
+    }
+
+
+def source_stats_document(
+    sources: list[Source],
+    feeds: list[Feed],
+    generated_at: datetime,
+    contents: Mapping[str, FeedContent] | None = None,
+    fetched: Mapping[str, Stored] | None = None,
+) -> bytes:
+    """Per catalog counts, how the catalogs overlap, and how many feeds join
+    more than one entry. `fetched` is the schedule bucket's index."""
+    contents = contents or {}
+    fetched = fetched or {}
+    shared = overlap(sources, feeds, dict(contents))
+    pairs = sorted(set(shared.feeds) | set(shared.urls) | set(shared.bodies))
+    return dumps(
+        {
+            "generated_at": generated_at.isoformat(),
+            "catalogs": {
+                catalog: _catalog_stats(
+                    catalog,
+                    sources,
+                    feeds,
+                    contents,
+                    fetched,
+                    shared.listed[catalog],
+                    shared.alone[catalog],
+                )
+                for catalog in sorted({s.catalog for s in sources})
+            },
+            "combinations": [
+                {"catalogs": list(combo), "feeds": n}
+                for combo, n in sorted(
+                    shared.combos.items(), key=lambda kv: (-kv[1], kv[0])
+                )
+            ],
+            "pairs": [
+                {
+                    "catalogs": [a, b],
+                    "feeds": shared.feeds[a, b],
+                    "scheduleUrls": shared.urls[a, b],
+                    "bodies": shared.bodies[a, b],
+                }
+                for a, b in pairs
+            ],
+            "duplication": _duplication(sources, feeds, contents),
         }
     )
 

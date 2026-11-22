@@ -20,7 +20,7 @@ order:
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed; metadata: cleaned-hash joins, overlap counts and every rename against the stored name |
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
-| `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
+| `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket; reads `gtfs/index.json` for `source-stats.json` |
 | `localities` | Own weekly job (`weekly_localities`, a heavy run): when Overture has a release newer than the stored one, build the locality file (`gtfs_zone_feed_fetch.localities.build`) into the schedule bucket for the municipality tags of `feed_facts` and timetable-sites |
 
 ## Artifacts
@@ -34,6 +34,7 @@ The published documents, all shaped in `artifacts.py`:
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
 | `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries, regions and municipalities of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
+| `source-stats.json` | Per catalog (`catalogs`): `entries` (distinct catalog feed ids), `feeds`, `scheduleFeeds`, `onlyHere` (schedule feeds no other catalog lists), `fetch` (last fetch outcome per schedule URL, from `gtfs/index.json`), `facts` (content outcome per schedule URL), `bytes` and `distinctBytes` (stored bodies, per URL and per sha256), `countries`. `combinations` and `pairs` as `source_overlap` counts them. `duplication`: `feeds`, `multiEntry` (feeds built from more than one catalog entry), `byEvidence` (feeds where `url`, `sha256`, `cleanedHash`, `reference` or `realtimeSibling` evidence joins two entries; once per kind) and `entriesPerFeed`. Rendered in the feed-list mirror's README |
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
 | `sitemap.xml` | Every indexable feed page, `lastmod` the day its fragments last changed |
