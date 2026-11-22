@@ -15,9 +15,9 @@ order:
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
-| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags, the cleaned-data hash, kept as `gtfs/<sha256>.facts.json` |
+| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags, kept as `gtfs/<sha256>.facts.json` |
 | `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
-| `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed; metadata: cleaned-hash joins, overlap counts and every rename against the stored name |
+| `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids |
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
@@ -29,10 +29,10 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
-| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries and regions of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
+| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries and regions of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date. What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
@@ -70,7 +70,6 @@ bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
 | `gtfs/<sha256>.zip` | A zip body, stored once however many URLs serve it |
 | `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
 | `gtfs/<sha256>.facts.json` | `feed_facts`' scan of that zip: `version` (`FACTS_VERSION`), `outcome` (`ok`, `not_zip`, `missing_files`, `parse_error`, `memory`), `detail`, `facts` (the content report's facts; empty unless ok) |
-| `dagster/<asset>.pickle` | The last value of each asset, read by the next run's downstream steps (`io_manager.StoreIOManager`); without `ZIPS_S3_ENDPOINT`, Dagster's filesystem IO manager under `DAGSTER_HOME` instead |
 | `localities/localities.parquet` | The `localities` asset's file: Overture `division_area` localities, Hilbert-sorted, read by timetable-sites over S3 |
 | `localities/release.txt` | The Overture release that file was built from, written after it |
 | `gtfs/index.json` | `generated`, `maxBytes`, and `urls`: normalized URL to `url` (as requested), `checked`, `outcome` (`ok`, `not_modified`, `too_large`, `http_error`, `error`), `status`, `key` (the stored object, `""` when none), `sha256`, `bytes`, `kind` (`zip`, `html`, `json`, `xml`, `empty`, `unknown`), `contentType`, `etag`, `lastModified` (header values as received), `fetched` (last download), `since` (last sha256 change) |
@@ -86,15 +85,11 @@ shared with the other pipelines that read the bucket.
 ## Logical feeds
 
 Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
-joins rows on exactly seven kinds of evidence:
+joins rows on exactly six kinds of evidence:
 
 - a shared URL (http and https unified), any kind, any catalog;
 - byte-identical schedules: scheduled URLs whose stored zip has the same
   sha256 (the same day's download);
-- identical cleaned data: readable schedules with the same `cleanedHash`
-  (`gtfs_zone_feed_fetch.cleaned`: every GTFS file but feed_info, row and
-  column order, BOM, CRLF, quoting and zip layout ignored, ids and column sets
-  kept);
 - an MDB realtime row's `feed_references` to an MDB static row;
 - a Transitland realtime feed to its operator's schedule, when the operator
   (top-level or nested in a feed) has exactly one schedule and every operator
@@ -111,18 +106,8 @@ Transitland operators' only one; PTV's nested-zip feeds sharing one download
 are one feed) and a wrong link can only be undone by changing the rules. Names:
 a Transitland operator, then a Mobility Database provider (its feed_name
 becomes the feed's `subtitle`), then the schedule's own single agency or
-publisher from `feed_contents`, then an NTD agency, then any row's name. A feed
-with two or more agencies skips each catalog name that is one of its agencies
-(normalized: accents, case and punctuation dropped), so an aggregate is named
-by its publisher rather than its first agency (DELFI, not "Rursee-Schifffahrt
-KG"); when every candidate is skipped the first is kept. Coordinates: any
+publisher from `feed_contents`, then an NTD agency, then any row's name. Coordinates: any
 placed member.
-
-Feeds that are not joined can overlap. A feed's agencies and station bbox are
-the union over all its scheduled URLs' facts. Two feeds sharing a normalized
-agency name with intersecting bboxes overlap: the one whose agencies are a
-strict subset of the other's is `containedIn` it and the other `contains` it;
-otherwise both `share`. Overlaps are published, never joined.
 
 Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
 each group takes the id of the existing feed it shares the most members with
