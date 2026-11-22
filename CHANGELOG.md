@@ -1,3 +1,9 @@
+## v0.16.1 (2026-11-22)
+
+### Fix
+
+- **feeds**: a cleaned hash joins only schedules with trips
+
 ## v0.16.0 (2026-11-22)
 
 ### Feat
