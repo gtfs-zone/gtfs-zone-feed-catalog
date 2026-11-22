@@ -25,6 +25,8 @@ from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from gtfs_zone_feed_fetch.localities import ATTRIBUTION as LOCALITIES_ATTRIBUTION
+
 from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
 from gtfs_zone_feed_catalog.urls import normalize_url
 
@@ -345,12 +347,17 @@ def alt_names(
 
 
 def place_tags(content: FeedContent | None, place: list[str]) -> list[str]:
-    """The countries and regions the feed's stations are in, from the content
-    report, most stop times first, leaving out the catalog place's parts."""
+    """The countries, regions and municipalities the feed's stations are in,
+    from the content report, most stop times first, leaving out the catalog
+    place's parts."""
     tags = (content.facts.get("placeTags") if content else None) or {}
     seen = {part.casefold() for part in place}
     found = []
-    for tag in [*tags.get("countries", []), *tags.get("regions", [])]:
+    for tag in [
+        *tags.get("countries", []),
+        *tags.get("regions", []),
+        *tags.get("municipalities", []),
+    ]:
         if tag.casefold() not in seen:
             seen.add(tag.casefold())
             found.append(tag)
@@ -425,7 +432,8 @@ def search_document(
     return dumps(
         {
             "generated_at": generated_at.isoformat(),
-            "attribution": ATTRIBUTION,
+            # Municipality place tags come from Overture's OSM-derived data.
+            "attribution": ATTRIBUTION | {"places": LOCALITIES_ATTRIBUTION},
             "count": len(feeds),
             "feeds": [search_entry(f, statuses, contents, rows) for f in feeds],
         }

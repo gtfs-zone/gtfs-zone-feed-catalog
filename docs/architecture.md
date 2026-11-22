@@ -15,13 +15,13 @@ order:
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
-| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags, the cleaned-data hash, kept as `gtfs/<sha256>.facts.json` |
+| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags (municipalities from a copy of the stored locality file), the cleaned-data hash, kept as `gtfs/<sha256>.facts.json` |
 | `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed; metadata: cleaned-hash joins, overlap counts and every rename against the stored name |
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
-| `localities` | Own weekly job (`weekly_localities`, a heavy run): when Overture has a release newer than the stored one, build the locality file (`gtfs_zone_feed_fetch.localities.build`) into the schedule bucket for timetable-sites' municipality tags |
+| `localities` | Own weekly job (`weekly_localities`, a heavy run): when Overture has a release newer than the stored one, build the locality file (`gtfs_zone_feed_fetch.localities.build`) into the schedule bucket for the municipality tags of `feed_facts` and timetable-sites |
 
 ## Artifacts
 
@@ -32,7 +32,7 @@ The published documents, all shaped in `artifacts.py`:
 | `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
-| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries and regions of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
+| `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries, regions and municipalities of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
 | `manifest.json` | sha256 and size of every other artifact; written last |
 | `pages/feed/<feedId>/{head,body}.html` | Per-feed HTML fragments (`pages.py`) that list.gtfs.zone's nginx includes into `/feed/<feedId>/<slug>`; rewritten only when their hash in `pages/index.json` changes |
@@ -42,7 +42,9 @@ The published documents, all shaped in `artifacts.py`:
 (`artifacts.ATTRIBUTION`): Transitland Atlas is CC-BY 4.0 and must be credited
 with a link; the Mobility Database catalog is CC0; the NTD weblinks are a US
 government work, credited to the Federal Transit Administration. Feed contents
-are licensed by their publishers.
+are licensed by their publishers. `search.json` carries the same block plus
+`places`, the credit for its municipality tags (Overture Maps, from
+OpenStreetMap, ODbL).
 
 ## History storage
 
@@ -71,7 +73,7 @@ bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
 | `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
 | `gtfs/<sha256>.facts.json` | `feed_facts`' scan of that zip: `version` (`FACTS_VERSION`), `outcome` (`ok`, `not_zip`, `missing_files`, `parse_error`, `memory`), `detail`, `facts` (the content report's facts; empty unless ok) |
 | `dagster/<asset>.pickle` | The last value of each asset, read by the next run's downstream steps (`io_manager.StoreIOManager`); without `ZIPS_S3_ENDPOINT`, Dagster's filesystem IO manager under `DAGSTER_HOME` instead |
-| `localities/localities.parquet` | The `localities` asset's file: Overture `division_area` localities, Hilbert-sorted, read by timetable-sites over S3 |
+| `localities/localities.parquet` | The `localities` asset's file: Overture `division_area` localities, Hilbert-sorted, read by timetable-sites over S3 and copied by `feed_facts` for its scans |
 | `localities/release.txt` | The Overture release that file was built from, written after it |
 | `gtfs/index.json` | `generated`, `maxBytes`, and `urls`: normalized URL to `url` (as requested), `checked`, `outcome` (`ok`, `not_modified`, `too_large`, `http_error`, `error`), `status`, `key` (the stored object, `""` when none), `sha256`, `bytes`, `kind` (`zip`, `html`, `json`, `xml`, `empty`, `unknown`), `contentType`, `etag`, `lastModified` (header values as received), `fetched` (last download), `since` (last sha256 change) |
 
@@ -151,7 +153,7 @@ not hidden.
 | `FETCH_CONCURRENCY` | Global cap on in-flight schedule downloads (default 8); the per-host delay is `CHECK_PER_HOST_DELAY_SECONDS` |
 | `FETCH_MAX_BYTES` | Largest body `feed_fetch` stores (default 2,000,000,000) |
 | `FETCH_BODY_MAX_BYTES` | Largest non-zip body it stores (default 1,000,000) |
-| `FETCH_WORKDIR` | Where downloads are written before upload, and zips copied for `feed_facts`; blank is the system temp dir |
+| `FETCH_WORKDIR` | Where downloads are written before upload, and zips and the locality file copied for `feed_facts`; blank is the system temp dir |
 | `FACTS_WORKERS` | Zips `feed_facts` scans at once, each in a process of its own (default 2) |
 | `LOCALITIES_MEMORY` | duckdb `memory_limit` for the `localities` build (default `4GB`) |
 | `FACTS_WORKER_MEMORY` | Address space cap per facts worker in bytes (default 3,000,000,000); a zip over it is stored as `memory` |

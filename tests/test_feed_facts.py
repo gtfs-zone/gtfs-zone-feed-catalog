@@ -6,13 +6,17 @@ import json
 import zipfile
 from datetime import UTC, datetime
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+import shapely
 from gtfs_zone_feed_fetch.facts import FACTS_VERSION
 from gtfs_zone_feed_fetch.pool import WorkerError
 from gtfs_zone_feed_fetch.store import Stored, facts_key, index_body
 
 from gtfs_zone_feed_catalog import facts_worker
 from gtfs_zone_feed_catalog.assets import feed_facts as module
+from gtfs_zone_feed_catalog.assets.localities import LOCALITIES_KEY
 from gtfs_zone_feed_catalog.settings import settings
 
 CHECKED = "2026-11-19T09:10:00+00:00"
@@ -105,6 +109,52 @@ def test_a_zip_gets_facts_once(store, monkeypatch):
 
     monkeypatch.setattr(module, "scan_stored", fail)
     assert module.facts(store)["bay.example/gtfs.zip"].facts == content.facts
+
+
+def put_localities(store, tmp_path, rows) -> None:
+    """A locality file of (name, name_en, country, polygon) rows in the bucket."""
+    shapes = [shape for *_, shape in rows]
+    bounds = shapely.bounds(shapes)
+    path = tmp_path / "localities.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "name": [r[0] for r in rows],
+                "name_en": [r[1] for r in rows],
+                "country": [r[2] for r in rows],
+                "xmin": bounds[:, 0],
+                "ymin": bounds[:, 1],
+                "xmax": bounds[:, 2],
+                "ymax": bounds[:, 3],
+                "geometry": shapely.to_wkb(shapes),
+            }
+        ),
+        path,
+    )
+    store.put(LOCALITIES_KEY, path.read_bytes())
+
+
+def test_facts_carry_municipalities_from_the_stored_locality_file(store, tmp_path):
+    put_localities(
+        store,
+        tmp_path,
+        [
+            ("San Francisco", None, "US", shapely.box(-122.52, 37.70, -122.35, 37.83)),
+            ("Oakland", None, "US", shapely.box(-122.35, 37.70, -122.10, 37.90)),
+        ],
+    )
+    body = make_zip(FEED)
+    put_index(store, {"bay.example/gtfs.zip": body})
+
+    tags = module.facts(store)["bay.example/gtfs.zip"].facts["placeTags"]
+
+    assert tags["municipalities"] == ["San Francisco", "Oakland"]
+
+
+def test_facts_have_no_municipalities_without_a_locality_file(store):
+    put_index(store, {"bay.example/gtfs.zip": make_zip(FEED)})
+    tags = module.facts(store)["bay.example/gtfs.zip"].facts["placeTags"]
+    assert not tags.get("municipalities")
 
 
 def test_an_older_facts_version_is_computed_again(store):

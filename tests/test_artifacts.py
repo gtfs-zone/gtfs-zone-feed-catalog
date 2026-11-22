@@ -367,6 +367,7 @@ def test_a_search_entry_is_the_feed_cut_down():
     (feed,) = build_feeds(rows, results, {})
     document = json.loads(artifacts.search_document([feed], {}, NOW, sources=rows))
     (entry,) = document["feeds"]
+    assert document["attribution"]["places"].startswith("Municipalities: Overture")
     assert entry == {
         "i": feed.feed_id,
         "n": "Metro",
@@ -396,12 +397,20 @@ def test_a_search_entry_carries_the_content_reports_place_tags():
             "placeTags": {
                 "countries": ["United States", "Canada"],
                 "regions": ["Massachusetts", "Ontario"],
+                "municipalities": ["Boston", "Toronto"],
             }
         },
     )
     contents = {"https://a.org/gtfs.zip": content}
     entry = artifacts.search_entry(feed, {}, contents)
-    assert entry["pt"] == ["United States", "Canada", "Massachusetts", "Ontario"]
+    assert entry["pt"] == [
+        "United States",
+        "Canada",
+        "Massachusetts",
+        "Ontario",
+        "Boston",
+        "Toronto",
+    ]
     place = Place(
         country_code="US",
         country="United States",
@@ -411,7 +420,7 @@ def test_a_search_entry_carries_the_content_reports_place_tags():
     )
     (placed,) = build_feeds([STATIC.with_place(place)], {}, {})
     entry = artifacts.search_entry(placed, {}, contents)
-    assert entry["pt"] == ["Canada", "Ontario"]
+    assert entry["pt"] == ["Canada", "Ontario", "Boston", "Toronto"]
     assert "pt" not in artifacts.search_entry(feed, {})
 
 
