@@ -5,7 +5,9 @@ Facts are computed once per sha256 and kept beside the zip as
 only zips that are new, or whose facts an older ``FACTS_VERSION`` wrote. Each
 zip is copied from the bucket to a temp file in ``fetch_workdir`` by this
 process, then scanned by a worker process of its own capped in address space:
-``facts_workers`` zips on disk and in flight at once.
+``facts_workers`` zips on disk and in flight at once. A run with zips to scan
+first copies the locality file (``localities.LOCALITIES_KEY``) to a temp file
+for the workers' municipality tags; with none stored, facts have no tags.
 
 The result is each indexed URL's content by normalized URL, in the shape of
 timetable-sites's content report: ``ok`` with facts, ``not_zip`` with what the
@@ -17,8 +19,11 @@ import json
 import logging
 import multiprocessing
 import tempfile
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import date, datetime
+from functools import partial
 from typing import Any
 
 import obstore
@@ -34,6 +39,7 @@ from gtfs_zone_feed_fetch.store import PREFIX, Stored, facts_key
 
 from gtfs_zone_feed_catalog import facts_worker
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+from gtfs_zone_feed_catalog.assets.localities import LOCALITIES_KEY
 from gtfs_zone_feed_catalog.settings import settings
 from gtfs_zone_feed_catalog.zips import ZipStoreSettings, read_index
 
@@ -73,29 +79,58 @@ def result_doc(sha: str, result: dict[str, Any] | WorkerError) -> dict[str, Any]
     return None
 
 
-def scan_stored(store: ObjectStore, sha: str) -> dict[str, Any] | WorkerError:
-    """Copy ``gtfs/<sha>.zip`` to a temp file and scan it in a capped worker."""
+@contextmanager
+def copied(store: ObjectStore, key: str, suffix: str) -> Iterator[str]:
+    """The object at ``key`` in a temp file in ``fetch_workdir``, by path."""
     with tempfile.NamedTemporaryFile(
-        dir=settings.fetch_workdir or None, suffix=".zip"
+        dir=settings.fetch_workdir or None, suffix=suffix
     ) as handle:
-        result = obstore.get(store.store, f"{PREFIX}{sha}.zip")
+        result = obstore.get(store.store, key)
         for chunk in result.stream(min_chunk_size=CHUNK):
             handle.write(chunk)
         handle.flush()
+        yield handle.name
+
+
+@contextmanager
+def locality_file(store: ObjectStore) -> Iterator[str | None]:
+    """The stored locality file in a temp file, None when there is none."""
+    try:
+        store.stat(LOCALITIES_KEY)
+    except ObjectNotFound:
+        log.warning("no %s; facts without municipality tags", LOCALITIES_KEY)
+        yield None
+        return
+    with copied(store, LOCALITIES_KEY, ".parquet") as path:
+        yield path
+
+
+def scan_stored(
+    store: ObjectStore, sha: str, localities: str | None = None
+) -> dict[str, Any] | WorkerError:
+    """Copy ``gtfs/<sha>.zip`` to a temp file and scan it in a capped worker."""
+    with copied(store, f"{PREFIX}{sha}.zip", ".zip") as path:
         return isolated(
-            facts_worker.scan_doc, handle.name, settings.facts_worker_memory
+            partial(facts_worker.scan_doc, localities=localities),
+            path,
+            settings.facts_worker_memory,
         )
 
 
 def compute_missing(
-    store: ObjectStore, todo: list[str], docs: dict[str, dict[str, Any]]
+    store: ObjectStore,
+    todo: list[str],
+    docs: dict[str, dict[str, Any]],
+    localities: str | None = None,
 ) -> None:
     """Compute and store the facts of ``todo``, adding them to ``docs``."""
     # Workers fork from a server that has the worker module imported already.
     multiprocessing.set_forkserver_preload(["gtfs_zone_feed_catalog.facts_worker"])
     outcomes: dict[str, int] = {}
     with ThreadPoolExecutor(max(settings.facts_workers, 1)) as threads:
-        futures = {threads.submit(scan_stored, store, sha): sha for sha in todo}
+        futures = {
+            threads.submit(scan_stored, store, sha, localities): sha for sha in todo
+        }
         for done, future in enumerate(as_completed(futures), 1):
             sha = futures[future]
             try:
@@ -156,7 +191,8 @@ def facts(store: ObjectStore) -> dict[str, FeedContent]:
     todo = sorted(set(sizes) - set(docs), key=lambda sha: -sizes[sha])
     log.info("facts: %d zips stored, %d to compute", len(sizes), len(todo))
     if todo:
-        compute_missing(store, todo, docs)
+        with locality_file(store) as localities:
+            compute_missing(store, todo, docs, localities)
 
     return {
         key: content_of(key, entry, docs.get(entry.sha256))

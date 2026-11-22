@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from gtfs_zone_feed_fetch.facts import FACTS_VERSION, scan
+from gtfs_zone_feed_fetch.localities import Localities
 from gtfs_zone_feed_fetch.reader import MissingFiles
 
 DETAIL_LENGTH = 200
@@ -27,11 +28,13 @@ def facts_doc(
     }
 
 
-def scan_doc(path: str) -> dict[str, Any]:
-    """The facts document of the zip at ``path``; a zip that cannot be read is
-    an outcome."""
+def scan_doc(path: str, localities: str | None = None) -> dict[str, Any]:
+    """The facts document of the zip at ``path``, with municipality tags from
+    the locality file at ``localities`` when given; a zip that cannot be read
+    is an outcome."""
     try:
-        return facts_doc("ok", facts=scan(Path(path)))
+        found = Localities(localities) if localities else None
+        return facts_doc("ok", facts=scan(Path(path), found))
     except zipfile.BadZipFile as exc:
         return facts_doc("not_zip", str(exc))
     except MissingFiles as exc:

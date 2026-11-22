@@ -699,7 +699,7 @@ requires-dist = [
     { name = "dagster-postgres", specifier = ">=0.25" },
     { name = "dagster-webserver", specifier = ">=1.9" },
     { name = "gtfs-zone-db-models", git = "https://github.com/gtfs-zone/gtfs-zone-db-models.git?tag=v0.4.0" },
-    { name = "gtfs-zone-feed-fetch", extras = ["localities"], git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.5.0" },
+    { name = "gtfs-zone-feed-fetch", extras = ["localities"], git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.6.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "obstore", specifier = ">=0.12" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
@@ -720,8 +720,8 @@ dev = [
 
 [[package]]
 name = "gtfs-zone-feed-fetch"
-version = "0.5.0"
-source = { git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.5.0#039cc7f1029f25580881a777af288a133b06630b" }
+version = "0.6.0"
+source = { git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.6.0#101070ce344abf2dd1474dc7a943533bef166490" }
 dependencies = [
     { name = "babel" },
     { name = "httpx" },
