@@ -1,3 +1,9 @@
+## v0.16.0 (2026-11-22)
+
+### Feat
+
+- **feeds**: cleaned-hash joins, agencies and overlaps per feed, asset values in the schedule bucket
+
 ## v0.15.0 (2026-11-22)
 
 ### Feat
