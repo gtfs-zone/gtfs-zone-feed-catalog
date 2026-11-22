@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     facts_workers: int = 2
     facts_worker_memory: int = 3_000_000_000
 
+    # duckdb's memory_limit for the localities build (duckdb syntax). The pod
+    # has no limit, so duckdb would otherwise take 80% of the node.
+    localities_memory: str = "4GB"
+
     # Retention. Both are load-bearing: one 40Gi Garage volume holds every
     # snapshot, and endpoint_state grows with every up/down flap. The absent
     # window covers sources, endpoints and feeds alike.

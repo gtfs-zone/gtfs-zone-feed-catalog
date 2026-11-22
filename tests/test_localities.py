@@ -14,7 +14,8 @@ def store(tmp_path, monkeypatch):
 
 
 def fake_build(calls):
-    def build(source, out, workdir):
+    def build(source, out, workdir, memory_limit):
+        assert memory_limit == settings.localities_memory
         calls.append(source)
         out.write_bytes(b"PAR1")
         return 7
@@ -41,7 +42,7 @@ def test_builds_a_new_release_then_skips_it(store):
 def test_a_failed_build_keeps_the_stored_release(store):
     module.refresh(store, "2026-11-18.0", fake_build([]))
 
-    def broken(source, out, workdir):
+    def broken(source, out, workdir, memory_limit):
         raise RuntimeError("no network")
 
     with pytest.raises(RuntimeError):

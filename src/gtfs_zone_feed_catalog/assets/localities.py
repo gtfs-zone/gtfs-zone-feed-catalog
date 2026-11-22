@@ -44,7 +44,7 @@ def stored_release(store: ObjectStore) -> str:
 def refresh(
     store: ObjectStore,
     release: str,
-    builder: Callable[[str, Path, Path], int] = build,
+    builder: Callable[..., int] = build,
 ) -> dict[str, str | int | bool]:
     """Build and upload the file for `release` unless it is the stored one."""
     if stored_release(store) == release:
@@ -52,7 +52,12 @@ def refresh(
     with tempfile.TemporaryDirectory(dir=settings.fetch_workdir or None) as tmp:
         workdir = Path(tmp)
         out = workdir / "localities.parquet"
-        rows = builder(overture_source(release), out, workdir)
+        rows = builder(
+            overture_source(release),
+            out,
+            workdir=workdir,
+            memory_limit=settings.localities_memory,
+        )
         size = out.stat().st_size
         obstore.put(
             store.store,
