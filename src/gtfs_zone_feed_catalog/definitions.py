@@ -1,7 +1,8 @@
 """Dagster entrypoint. The code server and ``dagster dev`` both load this module.
 
 Assets are collected by walking ``gtfs_zone_feed_catalog.assets``, so adding an asset is
-adding a module. One job over all of them, on one daily schedule. Nothing
+adding a module. One job over all of them but ``localities``, on one daily
+schedule; ``localities`` has its own weekly job. Nothing
 retries a run: the UI's re-execute button is the retry mechanism, and a catalog
 that is late by an hour is not worth a second trigger path. The one sensor,
 ``run_failure_alert``, only reports failed runs in every code location.
@@ -27,7 +28,7 @@ ALL_ASSETS = load_assets_from_package_module(assets)
 
 daily_catalog = define_asset_job(
     "daily_catalog",
-    selection=AssetSelection.all(),
+    selection=AssetSelection.all() - AssetSelection.assets("localities"),
     description="Ingest every catalog, check every endpoint, publish the artifacts",
 )
 
@@ -43,9 +44,26 @@ daily_schedule = ScheduleDefinition(
     default_status=DefaultScheduleStatus.RUNNING,
 )
 
+# Overture releases about monthly; a run with no new release writes nothing.
+# The heavy tag keeps it out of the sites runs that read the file.
+weekly_localities = define_asset_job(
+    "weekly_localities",
+    selection=AssetSelection.assets("localities"),
+    description="Rebuild the locality file from a new Overture release",
+    tags={"gtfs.zone/memory": "heavy"},
+)
+
+weekly_localities_schedule = ScheduleDefinition(
+    name="weekly_localities_schedule",
+    job=weekly_localities,
+    cron_schedule="0 6 * * 1",
+    execution_timezone="UTC",
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+
 defs = Definitions(
     assets=ALL_ASSETS,
-    jobs=[daily_catalog],
-    schedules=[daily_schedule],
+    jobs=[daily_catalog, weekly_localities],
+    schedules=[daily_schedule, weekly_localities_schedule],
     sensors=[run_failure_alert],
 )

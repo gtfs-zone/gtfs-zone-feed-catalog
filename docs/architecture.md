@@ -21,6 +21,7 @@ order:
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket |
+| `localities` | Own weekly job (`weekly_localities`, a heavy run): when Overture has a release newer than the stored one, build the locality file (`gtfs_zone_feed_fetch.localities.build`) into the schedule bucket for timetable-sites' municipality tags |
 
 ## Artifacts
 
@@ -69,12 +70,14 @@ bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
 | `gtfs/<sha256>.zip` | A zip body, stored once however many URLs serve it |
 | `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
 | `gtfs/<sha256>.facts.json` | `feed_facts`' scan of that zip: `version` (`FACTS_VERSION`), `outcome` (`ok`, `not_zip`, `missing_files`, `parse_error`, `memory`), `detail`, `facts` (the content report's facts; empty unless ok) |
+| `localities/localities.parquet` | The `localities` asset's file: Overture `division_area` localities, Hilbert-sorted, read by timetable-sites over S3 |
+| `localities/release.txt` | The Overture release that file was built from, written after it |
 | `gtfs/index.json` | `generated`, `maxBytes`, and `urls`: normalized URL to `url` (as requested), `checked`, `outcome` (`ok`, `not_modified`, `too_large`, `http_error`, `error`), `status`, `key` (the stored object, `""` when none), `sha256`, `bytes`, `kind` (`zip`, `html`, `json`, `xml`, `empty`, `unknown`), `contentType`, `etag`, `lastModified` (header values as received), `fetched` (last download), `since` (last sha256 change) |
 
 The request is a conditional GET with the stored body's validators; a 304 or a
 failure keeps the stored body. A body over `FETCH_MAX_BYTES` is abandoned after
 the headers and nothing is stored for it. The index is written after the
-uploads, then every object it does not reference is deleted: only the latest
+uploads, then every object under `gtfs/` it does not reference is deleted: only the latest
 body per URL is kept, and a URL no catalog lists loses its object. A facts
 document lives as long as its zip. The layout is `gtfs_zone_feed_fetch.store`,
 shared with the other pipelines that read the bucket.
