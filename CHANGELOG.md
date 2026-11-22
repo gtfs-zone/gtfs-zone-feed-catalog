@@ -1,3 +1,9 @@
+## v0.17.0 (2026-11-22)
+
+### Feat
+
+- **facts**: municipality tags from the stored locality file, appended to search.json pt with Overture credited
+
 ## v0.16.1 (2026-11-22)
 
 ### Fix
