@@ -1,3 +1,10 @@
+## v0.15.0 (2026-11-22)
+
+### Feat
+
+- **localities**: duckdb memory limit from LOCALITIES_MEMORY, feed-fetch v0.4.0
+- **localities**: weekly job building the Overture locality file into the schedule bucket
+
 ## v0.14.0 (2026-11-21)
 
 ### Feat
