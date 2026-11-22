@@ -1,3 +1,9 @@
+## v0.18.0 (2026-11-22)
+
+### Feat
+
+- **artifacts**: publish source-stats.json
+
 ## v0.17.0 (2026-11-22)
 
 ### Feat
