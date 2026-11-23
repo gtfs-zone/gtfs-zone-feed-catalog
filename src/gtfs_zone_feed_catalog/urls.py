@@ -9,14 +9,11 @@ lose information a request would need.
 
 from __future__ import annotations
 
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
-DEFAULT_PORTS = {"http": "80", "https": "443"}
-
-
-def is_absolute(url: str) -> bool:
-    """Whether a URL names a host to talk to. The scheme's case is not its own."""
-    return url.strip().lower().startswith(("http://", "https://"))
+# The index key of gtfs/index.json, shared with every reader of the bucket.
+from gtfs_zone_feed_fetch.urls import is_absolute as is_absolute
+from gtfs_zone_feed_fetch.urls import normalize_url as normalize_url
 
 
 def with_scheme(url: str) -> str:
@@ -26,39 +23,6 @@ def with_scheme(url: str) -> str:
     if "://" in url or not slash or "." not in host or " " in host:
         return url
     return f"https://{url}"
-
-
-def normalize_url(url: str) -> str:
-    """A comparison key for a download URL, or "" when there is nothing to compare.
-
-    Lowercases the scheme and host, drops a default port, drops a trailing
-    slash on an empty path, sorts query parameters and drops the fragment.
-    http and https are *not* unified: a plain-http endpoint is a materially
-    different thing to check, and some feeds exist only in that form.
-    """
-    url = url.strip()
-    if not is_absolute(url):
-        return ""
-
-    try:
-        parts = urlsplit(url)
-        host = parts.hostname or ""
-        port = parts.port
-    except ValueError:
-        # A malformed host or port; there is nothing to compare.
-        return ""
-    scheme = parts.scheme.lower()
-    netloc = (
-        host
-        if port is None or str(port) == DEFAULT_PORTS.get(scheme)
-        else f"{host}:{port}"
-    )
-
-    path = parts.path.rstrip("/") if parts.path != "/" else ""
-    query = "&".join(
-        f"{k}={v}" for k, v in sorted(parse_qsl(parts.query, keep_blank_values=True))
-    )
-    return urlunsplit((scheme, netloc, path, query, ""))
 
 
 def link_key(url: str) -> str:
