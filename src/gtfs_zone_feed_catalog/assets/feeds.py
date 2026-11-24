@@ -420,7 +420,7 @@ def feed_bbox(found: list[FeedContent]) -> Bbox | None:
     )
 
 
-def _intersect(a: Bbox, b: Bbox) -> bool:
+def intersect(a: Bbox, b: Bbox) -> bool:
     return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
 
 
@@ -444,7 +444,7 @@ def overlaps(feeds: list[Feed]) -> dict[str, tuple[Overlap, ...]]:
     found: dict[str, list[Overlap]] = defaultdict(list)
     for a, b in sorted(pairs):
         box_a, box_b = boxes[a], boxes[b]
-        if box_a is None or box_b is None or not _intersect(box_a, box_b):
+        if box_a is None or box_b is None or not intersect(box_a, box_b):
             continue
         mine, theirs = keys[a].keys(), keys[b].keys()
         shared = mine & theirs

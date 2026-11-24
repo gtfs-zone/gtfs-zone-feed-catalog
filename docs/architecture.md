@@ -15,7 +15,7 @@ order:
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
-| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags (municipalities from a copy of the stored locality file), the cleaned-data hash, kept as `gtfs/<sha256>.facts.json` |
+| `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags (municipalities from a copy of the stored locality file), the cleaned-data hash, kept as `gtfs/<sha256>.facts.json`, and the agency fingerprints from the same scan as `gtfs/<sha256>.fingerprint.parquet`; a zip with current facts and no fingerprint is scanned again only when `overlaps` could pair it |
 | `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
 | `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed; metadata: cleaned-hash joins, overlap counts and every rename against the stored name |
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
@@ -73,6 +73,7 @@ bucket (`ZIPS_S3_*`, default `gtfs-zips`), not the public one:
 | `gtfs/<sha256>.zip` | A zip body, stored once however many URLs serve it |
 | `gtfs/<sha256>.body` | A body that is not a zip (HTML, JSON, ...), when at most `FETCH_BODY_MAX_BYTES` |
 | `gtfs/<sha256>.facts.json` | `feed_facts`' scan of that zip: `version` (`FACTS_VERSION`), `outcome` (`ok`, `not_zip`, `missing_files`, `parse_error`, `memory`), `detail`, `facts` (the content report's facts; empty unless ok) |
+| `gtfs/<sha256>.fingerprint.parquet` | `feed_facts`' agency fingerprints of that zip, when its facts are ok (`gtfs_zone_feed_fetch.fingerprint`): a row per agency with `agency_id`, `name`, sorted `cells` and aligned `edge_from` / `edge_to` on the 150 m grid; `version` (`FINGERPRINT_VERSION`), `cell_metres` and `reappearances` in the file metadata |
 | `dagster/<asset>.pickle` | The last value of each asset, read by the next run's downstream steps (`io_manager.StoreIOManager`); without `ZIPS_S3_ENDPOINT`, Dagster's filesystem IO manager under `DAGSTER_HOME` instead |
 | `localities/localities.parquet` | The `localities` asset's file: Overture `division_area` localities, Hilbert-sorted, read by timetable-sites over S3 and copied by `feed_facts` for its scans |
 | `localities/release.txt` | The Overture release that file was built from, written after it |
