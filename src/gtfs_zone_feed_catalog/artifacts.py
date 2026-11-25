@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from gtfs_zone_feed_fetch.localities import ATTRIBUTION as LOCALITIES_ATTRIBUTION
 
-from gtfs_zone_feed_catalog.assets.feeds import links
+from gtfs_zone_feed_catalog.assets.feeds import links, normalize_agency
 from gtfs_zone_feed_catalog.assets.source_overlap import overlap
 from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
 from gtfs_zone_feed_catalog.urls import normalize_url
@@ -271,8 +271,10 @@ def feed_entry(
     if (content := feed_content(feed, contents)) is not None:
         entry["content"] = content_fields(content)
     if feed.agencies:
-        # Over every schedule URL, one per normalized name.
+        # Over every schedule URL, one per normalized name, sorted by it;
+        # agencyKeys holds those names in the same order.
         entry["agencies"] = list(feed.agencies)
+        entry["agencyKeys"] = [normalize_agency(name) for name in feed.agencies]
         entry["agencyCount"] = len(feed.agencies)
     if feed.overlaps:
         entry["overlaps"] = [

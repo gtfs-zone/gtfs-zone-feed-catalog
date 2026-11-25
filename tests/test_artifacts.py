@@ -457,6 +457,7 @@ def test_agencies_and_overlaps_reach_feeds_and_search():
     )
     entry = artifacts.feed_entry(agg, {}, contents)
     assert entry["agencies"] == ["City Bus", "Metro"]
+    assert entry["agencyKeys"] == ["city bus", "metro"]
     assert entry["agencyCount"] == 2
     assert entry["overlaps"] == [
         {"feedId": city.feed_id, "kind": "contains", "agencies": ["City Bus"]}
@@ -465,7 +466,7 @@ def test_agencies_and_overlaps_reach_feeds_and_search():
     assert (search["ac"], search["ov"]) == (1, [[agg.feed_id, "containedIn"]])
 
     (alone,) = build_feeds([STATIC], {}, {})
-    assert not {"agencies", "agencyCount", "overlaps"} & set(
+    assert not {"agencies", "agencyKeys", "agencyCount", "overlaps"} & set(
         artifacts.feed_entry(alone, {})
     )
     assert not {"ac", "ov"} & set(artifacts.search_entry(alone, {}))
