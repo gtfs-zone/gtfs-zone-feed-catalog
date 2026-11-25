@@ -13,17 +13,24 @@ The result is each indexed URL's content by normalized URL, in the shape of
 timetable-sites's content report: ``ok`` with facts, ``not_zip`` with what the
 body looked like, or the reason the zip could not be read. URLs with no stored
 body (a failed download) are left out.
+
+The same scan writes the zip's agency fingerprints beside it as
+``gtfs/<sha256>.fingerprint.parquet`` when its facts are ok. A zip whose
+current facts were stored without one is scanned again only when
+``overlaps`` could pair it with another zip (``overlap_candidates``).
 """
 
 import json
 import logging
 import multiprocessing
 import tempfile
+from collections import defaultdict
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import date, datetime
 from functools import partial
+from itertools import combinations
 from typing import Any
 
 import obstore
@@ -35,10 +42,11 @@ from gtfs_zone_db_models.object_store import (
 )
 from gtfs_zone_feed_fetch.facts import FACTS_VERSION
 from gtfs_zone_feed_fetch.pool import WorkerError, isolated
-from gtfs_zone_feed_fetch.store import PREFIX, Stored, facts_key
+from gtfs_zone_feed_fetch.store import PREFIX, Stored, facts_key, fingerprint_key
 
 from gtfs_zone_feed_catalog import facts_worker
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
+from gtfs_zone_feed_catalog.assets.feeds import intersect, normalize_agency
 from gtfs_zone_feed_catalog.assets.localities import LOCALITIES_KEY
 from gtfs_zone_feed_catalog.settings import settings
 from gtfs_zone_feed_catalog.zips import ZipStoreSettings, read_index
@@ -52,6 +60,9 @@ CHUNK = 1 << 20
 MEMORY_ERRORS = ("MemoryError", "BrokenProcessPool")
 # Keys of the scan that are the stored object's, not the zip's contents.
 OBJECT_KEYS = ("bytes", "sha256")
+PARQUET = "application/vnd.apache.parquet"
+
+type Scanned = tuple[dict[str, Any], bytes]
 
 
 def read_docs(store: ObjectStore, shas: list[str]) -> dict[str, dict[str, Any]]:
@@ -67,16 +78,43 @@ def read_docs(store: ObjectStore, shas: list[str]) -> dict[str, dict[str, Any]]:
         return {sha: doc for sha, doc in pool.map(one, shas) if doc is not None}
 
 
-def result_doc(sha: str, result: dict[str, Any] | WorkerError) -> dict[str, Any] | None:
-    """The document to store for a worker's result, None for a failure worth
-    trying again next run."""
+def result_doc(
+    sha: str, result: Scanned | WorkerError
+) -> tuple[dict[str, Any] | None, bytes]:
+    """The document and fingerprint file to store for a worker's result; no
+    document for a failure worth trying again next run."""
     if not isinstance(result, WorkerError):
         return result
     name = str(result).partition(": ")[0]
     if name in MEMORY_ERRORS:
-        return facts_worker.facts_doc("memory", name)
+        return facts_worker.facts_doc("memory", name), b""
     log.warning("facts of %s failed: %s", sha, result)
-    return None
+    return None, b""
+
+
+def overlap_candidates(docs: dict[str, dict[str, Any]]) -> set[str]:
+    """The zips with ok facts that share a normalized agency name with another
+    zip of another cleaned hash, with intersecting station bboxes: every zip
+    ``feeds.overlaps`` can pair, and other versions of the same feed."""
+    boxes: dict[str, list[float]] = {}
+    cleaned: dict[str, str] = {}
+    by_agency: dict[str, set[str]] = defaultdict(set)
+    for sha, doc in docs.items():
+        facts = doc.get("facts") or {}
+        box = (facts.get("location") or {}).get("bbox") or []
+        if doc.get("outcome") != "ok" or len(box) != 4:
+            continue
+        boxes[sha] = box
+        cleaned[sha] = facts.get("cleanedHash") or sha
+        for agency in facts.get("agencies") or []:
+            if key := normalize_agency(agency.get("name") or ""):
+                by_agency[key].add(sha)
+    found: set[str] = set()
+    for shas in by_agency.values():
+        for a, b in combinations(sorted(shas), 2):
+            if cleaned[a] != cleaned[b] and intersect(boxes[a], boxes[b]):
+                found.update((a, b))
+    return found
 
 
 @contextmanager
@@ -107,7 +145,7 @@ def locality_file(store: ObjectStore) -> Iterator[str | None]:
 
 def scan_stored(
     store: ObjectStore, sha: str, localities: str | None = None
-) -> dict[str, Any] | WorkerError:
+) -> Scanned | WorkerError:
     """Copy ``gtfs/<sha>.zip`` to a temp file and scan it in a capped worker."""
     with copied(store, f"{PREFIX}{sha}.zip", ".zip") as path:
         return isolated(
@@ -123,7 +161,8 @@ def compute_missing(
     docs: dict[str, dict[str, Any]],
     localities: str | None = None,
 ) -> None:
-    """Compute and store the facts of ``todo``, adding them to ``docs``."""
+    """Compute and store the facts and fingerprints of ``todo``, adding the
+    facts to ``docs``."""
     # Workers fork from a server that has the worker module imported already.
     multiprocessing.set_forkserver_preload(["gtfs_zone_feed_catalog.facts_worker"])
     outcomes: dict[str, int] = {}
@@ -134,11 +173,13 @@ def compute_missing(
         for done, future in enumerate(as_completed(futures), 1):
             sha = futures[future]
             try:
-                doc = result_doc(sha, future.result())
+                doc, fingerprint = result_doc(sha, future.result())
             except Exception as exc:
                 # A failed copy from the bucket: tried again next run.
                 log.warning("facts of %s failed: %s: %s", sha, type(exc).__name__, exc)
-                doc = None
+                doc, fingerprint = None, b""
+            if fingerprint:
+                store.put(fingerprint_key(sha), fingerprint, content_type=PARQUET)
             if doc is not None:
                 store.put(
                     facts_key(sha),
@@ -187,9 +228,17 @@ def facts(store: ObjectStore) -> dict[str, FeedContent]:
 
     docs = read_docs(store, [sha for sha in sizes if facts_key(sha) in have])
     docs = {sha: doc for sha, doc in docs.items() if doc["version"] == FACTS_VERSION}
+    missing = set(sizes) - set(docs)
+    unprinted = {sha for sha in docs if fingerprint_key(sha) not in have}
+    backfill = overlap_candidates(docs) & unprinted
     # Largest first, so the long scans start while the rest fill in around them.
-    todo = sorted(set(sizes) - set(docs), key=lambda sha: -sizes[sha])
-    log.info("facts: %d zips stored, %d to compute", len(sizes), len(todo))
+    todo = sorted(missing | backfill, key=lambda sha: -sizes[sha])
+    log.info(
+        "facts: %d zips stored, %d to compute, %d more to fingerprint",
+        len(sizes),
+        len(missing),
+        len(backfill),
+    )
     if todo:
         with locality_file(store) as localities:
             compute_missing(store, todo, docs, localities)

@@ -11,8 +11,9 @@ import pyarrow.parquet as pq
 import pytest
 import shapely
 from gtfs_zone_feed_fetch.facts import FACTS_VERSION
+from gtfs_zone_feed_fetch.fingerprint import from_parquet
 from gtfs_zone_feed_fetch.pool import WorkerError
-from gtfs_zone_feed_fetch.store import Stored, facts_key, index_body
+from gtfs_zone_feed_fetch.store import Stored, facts_key, fingerprint_key, index_body
 
 from gtfs_zone_feed_catalog import facts_worker
 from gtfs_zone_feed_catalog.assets import feed_facts as module
@@ -191,9 +192,9 @@ def test_unreadable_zips_and_other_bodies_are_outcomes(store):
 
 
 def test_a_worker_over_its_memory_is_stored_a_passing_fault_is_not():
-    memory = module.result_doc("a", WorkerError("MemoryError: over"))
-    assert memory["outcome"] == "memory"
-    assert module.result_doc("b", WorkerError("OSError: disk full")) is None
+    memory, fingerprint = module.result_doc("a", WorkerError("MemoryError: over"))
+    assert (memory["outcome"], fingerprint) == ("memory", b"")
+    assert module.result_doc("b", WorkerError("OSError: disk full")) == (None, b"")
 
 
 def test_a_failed_copy_is_tried_again_next_run(store, monkeypatch):
@@ -213,3 +214,93 @@ def test_a_url_with_no_stored_body_is_left_out(store):
     put_index(store, {"bay.example/gtfs.zip": body})
     store.delete(f"gtfs/{sha(body)}.zip")
     assert module.facts(store) == {}
+
+
+def test_a_zip_gets_its_fingerprint_beside_its_facts(store):
+    body = make_zip(FEED)
+    missing = make_zip({k: v for k, v in FEED.items() if k != "stop_times.txt"})
+    put_index(
+        store, {"bay.example/gtfs.zip": body, "missing.example/gtfs.zip": missing}
+    )
+
+    module.facts(store)
+
+    (agency,) = from_parquet(store.get(fingerprint_key(sha(body)))).agencies
+    assert (agency.agency_id, agency.name) == ("a", "Bay Transit")
+    assert len(agency.cells) == 2 and len(agency.edges) == 1
+    assert fingerprint_key(sha(missing)) not in store.list_prefix("gtfs/")
+
+
+def other_version(name: str, stop: str) -> bytes:
+    """FEED with agency `name` and one more stop, so its cleaned hash differs."""
+    return make_zip(
+        FEED
+        | {
+            "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n"
+            f"a,{name},https://bay.example,America/Los_Angeles\n",
+            "stops.txt": FEED["stops.txt"] + f"{stop},{stop},37.79,-122.40\n",
+        }
+    )
+
+
+def test_zips_overlaps_can_pair_are_fingerprinted_once(store, monkeypatch):
+    bay, copy, lone = (
+        make_zip(FEED),
+        other_version("Bay Transit", "z"),
+        other_version("Lone Ferry", "w"),
+    )
+    put_index(
+        store,
+        {
+            "bay.example/gtfs.zip": bay,
+            "copy.example/gtfs.zip": copy,
+            "lone.example/gtfs.zip": lone,
+        },
+    )
+    module.facts(store)
+    # Facts stored before fingerprints existed.
+    for body in (bay, copy, lone):
+        store.delete(fingerprint_key(sha(body)))
+
+    scanned = []
+    real = module.scan_stored
+
+    def counting(store_, digest, localities=None):
+        scanned.append(digest)
+        return real(store_, digest, localities)
+
+    monkeypatch.setattr(module, "scan_stored", counting)
+    module.facts(store)
+
+    assert sorted(scanned) == sorted([sha(bay), sha(copy)])
+    have = set(store.list_prefix("gtfs/"))
+    assert fingerprint_key(sha(bay)) in have and fingerprint_key(sha(copy)) in have
+    assert fingerprint_key(sha(lone)) not in have
+
+    scanned.clear()
+    module.facts(store)
+    assert scanned == []
+
+
+def ok_doc(name: str, bbox: list[float], cleaned: str) -> dict:
+    return facts_worker.facts_doc(
+        "ok",
+        facts={
+            "agencies": [{"name": name}],
+            "location": {"bbox": bbox},
+            "cleanedHash": cleaned,
+        },
+    )
+
+
+def test_overlap_candidates():
+    here, far = [0, 0, 1, 1], [5, 5, 6, 6]
+    docs = {
+        "a": ok_doc("Bay Transit", here, "1"),
+        "b": ok_doc("BAY  transit!", [0.5, 0.5, 2, 2], "2"),
+        "c": ok_doc("Bay Transit", far, "3"),
+        "d": ok_doc("Ferry", here, "4"),
+        "e": ok_doc("Ferry", here, "4"),
+        "f": facts_worker.facts_doc("memory", "MemoryError"),
+    }
+    assert module.overlap_candidates(docs) == {"a", "b"}

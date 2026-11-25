@@ -9,7 +9,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from gtfs_zone_feed_fetch.facts import FACTS_VERSION, scan
+from gtfs_zone_feed_fetch.facts import FACTS_VERSION, scan_fingerprinted
+from gtfs_zone_feed_fetch.fingerprint import to_parquet
 from gtfs_zone_feed_fetch.localities import Localities
 from gtfs_zone_feed_fetch.reader import MissingFiles
 
@@ -28,17 +29,19 @@ def facts_doc(
     }
 
 
-def scan_doc(path: str, localities: str | None = None) -> dict[str, Any]:
+def scan_doc(path: str, localities: str | None = None) -> tuple[dict[str, Any], bytes]:
     """The facts document of the zip at ``path``, with municipality tags from
-    the locality file at ``localities`` when given; a zip that cannot be read
-    is an outcome."""
+    the locality file at ``localities`` when given, and its
+    ``gtfs/<sha256>.fingerprint.parquet`` file, b"" unless the outcome is ok. A
+    zip that cannot be read is an outcome."""
     try:
         found = Localities(localities) if localities else None
-        return facts_doc("ok", facts=scan(Path(path), found))
+        facts, fingerprint = scan_fingerprinted(Path(path), found)
+        return facts_doc("ok", facts=facts), to_parquet(fingerprint)
     except zipfile.BadZipFile as exc:
-        return facts_doc("not_zip", str(exc))
+        return facts_doc("not_zip", str(exc)), b""
     except MissingFiles as exc:
-        return facts_doc("missing_files", str(exc))
+        return facts_doc("missing_files", str(exc)), b""
     except (
         ValueError,
         KeyError,
@@ -47,4 +50,4 @@ def scan_doc(path: str, localities: str | None = None) -> dict[str, Any]:
         csv.Error,
         EOFError,
     ) as exc:
-        return facts_doc("parse_error", f"{type(exc).__name__}: {exc}")
+        return facts_doc("parse_error", f"{type(exc).__name__}: {exc}"), b""
