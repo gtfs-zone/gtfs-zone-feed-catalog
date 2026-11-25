@@ -1,3 +1,9 @@
+## v0.20.1 (2026-11-25)
+
+### Fix
+
+- **deps**: feed-fetch v0.8.1, capped facts workers use Arrow's system memory pool
+
 ## v0.20.0 (2026-11-25)
 
 ### Feat
