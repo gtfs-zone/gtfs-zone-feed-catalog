@@ -1,3 +1,13 @@
+## v0.19.0 (2026-11-25)
+
+### Feat
+
+- **facts**: agency fingerprints beside each zip as gtfs/<sha256>.fingerprint.parquet, backfilled for zips overlaps can pair
+
+### Refactor
+
+- **urls**: normalize_url and is_absolute from feed-fetch v0.7.0
+
 ## v0.18.0 (2026-11-22)
 
 ### Feat
