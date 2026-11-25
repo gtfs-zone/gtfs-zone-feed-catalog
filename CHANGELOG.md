@@ -1,3 +1,9 @@
+## v0.20.0 (2026-11-25)
+
+### Feat
+
+- **artifacts**: agencyKeys in feeds.json, each agency's normalized name in the order of agencies
+
 ## v0.19.0 (2026-11-25)
 
 ### Feat
