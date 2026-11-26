@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from gtfs_zone_feed_fetch.localities import ATTRIBUTION as LOCALITIES_ATTRIBUTION
 
-from gtfs_zone_feed_catalog.assets.feeds import links, normalize_agency
+from gtfs_zone_feed_catalog.assets.feeds import Overlap, links, normalize_agency
 from gtfs_zone_feed_catalog.assets.source_overlap import overlap
 from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
 from gtfs_zone_feed_catalog.urls import normalize_url
@@ -92,6 +92,19 @@ def dumps(payload: object) -> bytes:
 
 def sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
+
+
+def overlap_fields(o: Overlap) -> dict[str, Any]:
+    """An overlap's keys; `scores` (per agency, null when unscored) only when
+    an agency was scored."""
+    fields: dict[str, Any] = {
+        "feedId": o.feed_id,
+        "kind": o.kind,
+        "agencies": list(o.agencies),
+    }
+    if any(score is not None for score in o.scores):
+        fields["scores"] = [None if x is None else round(x, 3) for x in o.scores]
+    return fields
 
 
 def place_fields(place: Place) -> dict[str, Any]:
@@ -277,10 +290,7 @@ def feed_entry(
         entry["agencyKeys"] = [normalize_agency(name) for name in feed.agencies]
         entry["agencyCount"] = len(feed.agencies)
     if feed.overlaps:
-        entry["overlaps"] = [
-            {"feedId": o.feed_id, "kind": o.kind, "agencies": list(o.agencies)}
-            for o in feed.overlaps
-        ]
+        entry["overlaps"] = [overlap_fields(o) for o in feed.overlaps]
     members = [rows[m] for m in feed.members if m in (rows or {})]
     if licenses := sorted({row.license_url for row in members if row.license_url}):
         entry["licenses"] = licenses

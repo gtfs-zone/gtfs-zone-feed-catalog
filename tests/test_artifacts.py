@@ -8,7 +8,7 @@ from gtfs_zone_feed_catalog import artifacts
 from gtfs_zone_feed_catalog.assets.check_history import SourceStatus
 from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
-from gtfs_zone_feed_catalog.assets.feeds import build_feeds
+from gtfs_zone_feed_catalog.assets.feeds import Overlap, build_feeds
 from gtfs_zone_feed_catalog.catalog import Place, Source
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
@@ -470,6 +470,18 @@ def test_agencies_and_overlaps_reach_feeds_and_search():
         artifacts.feed_entry(alone, {})
     )
     assert not {"ac", "ov"} & set(artifacts.search_entry(alone, {}))
+
+
+def test_overlap_scores_are_rounded_and_null_where_unscored():
+    scored = Overlap("f-b", "shares", ("A", "B"), (0.123456, None))
+    assert artifacts.overlap_fields(scored) == {
+        "feedId": "f-b",
+        "kind": "shares",
+        "agencies": ["A", "B"],
+        "scores": [0.123, None],
+    }
+    unscored = Overlap("f-b", "shares", ("A",), (None,))
+    assert "scores" not in artifacts.overlap_fields(unscored)
 
 
 def test_the_summary_counts_ntd_rows_and_links_no_catalog_page():

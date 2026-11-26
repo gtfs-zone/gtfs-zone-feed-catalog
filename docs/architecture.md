@@ -17,7 +17,7 @@ order:
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
 | `feed_facts` | Scan every stored zip once per sha256 (`gtfs_zone_feed_fetch.facts.scan`, in memory-capped workers): feed_info, service range, agencies, counts, languages, location and place tags (municipalities from a copy of the stored locality file), the cleaned-data hash, kept as `gtfs/<sha256>.facts.json`, and the agency fingerprints from the same scan as `gtfs/<sha256>.fingerprint.parquet`; a zip with current facts and no fingerprint is scanned again only when `overlaps` could pair it |
 | `feed_contents` | What each schedule's download held (ok, not_zip, missing_files, ...; feed_info, service range, counts, place tags): from `feed_facts`, else timetable-sites's content report; recorded per URL, with outcome changes |
-| `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed; metadata: cleaned-hash joins, overlap counts and every rename against the stored name |
+| `feeds` | Group rows into logical feeds (one per transit system) with persisted, sticky ids; agencies and overlaps per feed (shared agencies confirmed by fingerprint edges); metadata: cleaned-hash joins, overlap counts (`overlaps_scored`) and every rename against the stored name |
 | `source_overlap` | Feeds with a schedule by catalog combination, and per catalog pair the feeds, schedule URLs and bodies (sha256) both list; metadata in the Dagster UI only |
 | `history_retention` | Delete old `endpoint_state`, `endpoint_content_state` and `endpoint_version` rows, and absent sources, endpoints and feeds, past their window |
 | `published_artifacts` | Write the JSON artifacts and dated snapshots to the public bucket; reads `gtfs/index.json` for `source-stats.json` |
@@ -29,7 +29,7 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name, sorted by it), `agencyKeys` (those normalized names, same order: lowercase, no accents or punctuation, spaces collapsed; what `overlaps` and agency pages match on), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name, sorted by it), `agencyKeys` (those normalized names, same order: lowercase, no accents or punctuation, spaces collapsed; what `overlaps` and agency pages match on), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`, and `scores` when one was scored: each agency's edge containment, null where unscored), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
 | `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
 | `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries, regions and municipalities of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
@@ -121,9 +121,15 @@ Coordinates: any placed member.
 
 Feeds that are not joined can overlap. A feed's agencies and station bbox are
 the union over all its scheduled URLs' facts. Two feeds sharing a normalized
-agency name with intersecting bboxes overlap: the one whose agencies are a
-strict subset of the other's is `containedIn` it and the other `contains` it;
-otherwise both `share`. Overlaps are published, never joined.
+agency name with intersecting bboxes are candidates. When every scheduled zip
+of both feeds has a fingerprint, each shared agency is scored by the edge
+containment of its side with fewer edges in the other (feed-fetch
+`fingerprint.containment`, edges of the union over the feed's zips) and
+dropped below 0.01 (`EDGE_THRESHOLD`); otherwise it is kept unscored. A pair
+with no agency left does not overlap. Of the rest, a feed whose agencies all
+remain shared and are a strict subset of the other's is `containedIn` it and
+the other `contains` it; otherwise both `share`. Overlaps are published, never
+joined.
 
 Feed ids (`f-<10 hex>`) go in shareable URLs, so they are persisted and sticky:
 each group takes the id of the existing feed it shares the most members with
@@ -171,4 +177,4 @@ not hidden.
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_REGION` | Public artifact bucket; read by `gtfs_zone_db_models.object_store`, not by this repo's `Settings` |
-| `ZIPS_S3_ENDPOINT` `ZIPS_S3_BUCKET` `ZIPS_S3_ACCESS_KEY` `ZIPS_S3_SECRET_KEY` `ZIPS_S3_REGION` | Private schedule bucket (default `gtfs-zips`); blank endpoint skips `feed_fetch` and `feed_facts` |
+| `ZIPS_S3_ENDPOINT` `ZIPS_S3_BUCKET` `ZIPS_S3_ACCESS_KEY` `ZIPS_S3_SECRET_KEY` `ZIPS_S3_REGION` | Private schedule bucket (default `gtfs-zips`); blank endpoint skips `feed_fetch` and `feed_facts`, and `feeds` matches overlaps by agency name only |

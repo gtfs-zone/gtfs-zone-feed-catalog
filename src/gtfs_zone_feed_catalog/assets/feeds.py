@@ -30,20 +30,31 @@ that feed as ``moved_to``, so consumers can follow it.
 
 Feeds that are not joined can still overlap: a feed whose agencies include
 another's (an aggregate such as DELFI and a city feed in it), or two feeds
-sharing an agency, with intersecting station bboxes. Overlaps are published,
-never joined.
+sharing an agency, with intersecting station bboxes. When both feeds have
+agency fingerprints, a shared agency is kept only when the edge containment of
+its smaller side reaches ``EDGE_THRESHOLD``. Overlaps are published, never
+joined.
 """
 
 import hashlib
 import logging
 import unicodedata
 from collections import Counter, defaultdict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from itertools import combinations
 from urllib.parse import urlsplit
 
 from dagster import AssetExecutionContext, MetadataValue, asset
+from gtfs_zone_db_models.object_store import ObjectNotFound, ObjectStore
+from gtfs_zone_feed_fetch.fingerprint import (
+    AgencyFingerprint,
+    FeedFingerprint,
+    containment,
+    from_parquet,
+)
+from gtfs_zone_feed_fetch.store import fingerprint_key
 from sqlalchemy import delete, insert, select, update
 
 from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP
@@ -55,6 +66,7 @@ from gtfs_zone_feed_catalog.database import get_session_factory
 from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord, SourceRecord
 from gtfs_zone_feed_catalog.settings import settings
 from gtfs_zone_feed_catalog.urls import link_key, normalize_url, rt_sibling_key
+from gtfs_zone_feed_catalog.zips import ZipStoreSettings
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +81,10 @@ CONTAINS = "contains"
 CONTAINED_IN = "containedIn"
 SHARES = "shares"
 
+# Least edge containment of a shared agency's smaller side that confirms it
+# (decided over every overlaps pair on 2026-11-25).
+EDGE_THRESHOLD = 0.01
+
 type Bbox = tuple[float, float, float, float]
 
 
@@ -78,6 +94,8 @@ class Overlap:
     kind: str
     # Display names of the agencies both feeds have, sorted.
     agencies: tuple[str, ...]
+    # Per agency, its edge containment; None when either feed has no fingerprint.
+    scores: tuple[float | None, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +128,8 @@ class Feed:
     agencies: tuple[str, ...] = ()
     # Union of those URLs' station bboxes (min lon, min lat, max lon, max lat).
     bbox: Bbox | None = None
+    # sha256 of every scheduled URL's readable zip, sorted.
+    zips: tuple[str, ...] = ()
     overlaps: tuple[Overlap, ...] = ()
 
 
@@ -424,13 +444,16 @@ def intersect(a: Bbox, b: Bbox) -> bool:
     return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
 
 
-def overlaps(feeds: list[Feed]) -> dict[str, tuple[Overlap, ...]]:
-    """{feed id: its overlaps}: feeds sharing a normalized agency name, with
-    intersecting bboxes. One whose agencies are a strict subset of the other's
-    is containedIn it, and the other contains it; any other shared agency is
-    shares. A feed without agencies or a bbox overlaps nothing."""
+def no_fingerprint(_: str) -> None:
+    return None
+
+
+def overlap_pairs(feeds: list[Feed]) -> dict[tuple[str, str], set[str]]:
+    """{(feed id, feed id): shared normalized agency names} for feeds sharing
+    an agency name, with intersecting bboxes. A feed without agencies or a
+    bbox pairs with nothing."""
     keys = {
-        feed.feed_id: {normalize_agency(name): name for name in feed.agencies}
+        feed.feed_id: {normalize_agency(name) for name in feed.agencies}
         for feed in feeds
     }
     boxes = {feed.feed_id: feed.bbox for feed in feeds}
@@ -439,27 +462,106 @@ def overlaps(feeds: list[Feed]) -> dict[str, tuple[Overlap, ...]]:
         if feed.bbox is not None:
             for key in keys[feed.feed_id]:
                 by_agency[key].append(feed.feed_id)
-
     pairs = {pair for ids in by_agency.values() for pair in combinations(ids, 2)}
-    found: dict[str, list[Overlap]] = defaultdict(list)
+    found = {}
     for a, b in sorted(pairs):
         box_a, box_b = boxes[a], boxes[b]
-        if box_a is None or box_b is None or not intersect(box_a, box_b):
+        if box_a is not None and box_b is not None and intersect(box_a, box_b):
+            found[(a, b)] = keys[a] & keys[b]
+    return found
+
+
+def agency_edges(
+    feed: Feed, fingerprint: Callable[[str], FeedFingerprint | None]
+) -> dict[str, frozenset[int]] | None:
+    """{normalized agency name: the union of its edges} over `feed`'s zips,
+    None unless every zip has a fingerprint."""
+    prints = [fingerprint(sha) for sha in feed.zips]
+    if not prints or any(p is None for p in prints):
+        return None
+    edges: dict[str, set[int]] = defaultdict(set)
+    for printed in prints:
+        for agency in printed.agencies if printed else ():
+            if key := normalize_agency(agency.name):
+                edges[key] |= agency.edges
+    return {key: frozenset(found) for key, found in edges.items()}
+
+
+def edge_score(
+    key: str,
+    a: dict[str, frozenset[int]] | None,
+    b: dict[str, frozenset[int]] | None,
+) -> float | None:
+    """Edge containment of the agency's side with fewer edges in the other;
+    None when either side has no fingerprint or the agency is not in it."""
+    if a is None or b is None or key not in a or key not in b:
+        return None
+    small, big = sorted((a[key], b[key]), key=len)
+    return containment(
+        AgencyFingerprint("", key, frozenset(), small),
+        AgencyFingerprint("", key, frozenset(), big),
+    )
+
+
+def overlaps(
+    feeds: list[Feed],
+    fingerprint: Callable[[str], FeedFingerprint | None] = no_fingerprint,
+) -> dict[str, tuple[Overlap, ...]]:
+    """{feed id: its overlaps}: feeds sharing a normalized agency name, with
+    intersecting bboxes (`overlap_pairs`). A shared agency scored below
+    `EDGE_THRESHOLD` is dropped; an unscored one is kept. One feed whose
+    agencies all remain shared, and are a strict subset of the other's, is
+    containedIn it, and the other contains it; any other pair shares. A pair
+    with no agency left does not overlap."""
+    by_id = {feed.feed_id: feed for feed in feeds}
+    names = {
+        feed.feed_id: {normalize_agency(name): name for name in feed.agencies}
+        for feed in feeds
+    }
+    pairs = overlap_pairs(feeds)
+    paired = sorted({feed_id for pair in pairs for feed_id in pair})
+    edges = {feed_id: agency_edges(by_id[feed_id], fingerprint) for feed_id in paired}
+
+    found: dict[str, list[Overlap]] = defaultdict(list)
+    for (a, b), shared in pairs.items():
+        scores = {key: edge_score(key, edges[a], edges[b]) for key in shared}
+        kept = {
+            key
+            for key, score in scores.items()
+            if score is None or score >= EDGE_THRESHOLD
+        }
+        if not kept:
             continue
-        mine, theirs = keys[a].keys(), keys[b].keys()
-        shared = mine & theirs
-        if mine < theirs:
+        mine, theirs = names[a].keys(), names[b].keys()
+        if kept == mine and mine < theirs:
             kind_a, kind_b = CONTAINED_IN, CONTAINS
-        elif theirs < mine:
+        elif kept == theirs and theirs < mine:
             kind_a, kind_b = CONTAINS, CONTAINED_IN
         else:
             kind_a = kind_b = SHARES
-        found[a].append(Overlap(b, kind_a, tuple(sorted(keys[a][k] for k in shared))))
-        found[b].append(Overlap(a, kind_b, tuple(sorted(keys[b][k] for k in shared))))
+        found[a].append(_overlap(b, kind_a, kept, names[a], scores))
+        found[b].append(_overlap(a, kind_b, kept, names[b], scores))
     return {
         feed_id: tuple(sorted(items, key=lambda o: o.feed_id))
         for feed_id, items in found.items()
     }
+
+
+def _overlap(
+    feed_id: str,
+    kind: str,
+    kept: Iterable[str],
+    names: dict[str, str],
+    scores: dict[str, float | None],
+) -> Overlap:
+    """An overlap with `kept` as display names and their scores, by name."""
+    ordered = sorted((names[key], scores[key]) for key in kept)
+    return Overlap(
+        feed_id,
+        kind,
+        tuple(name for name, _ in ordered),
+        tuple(score for _, score in ordered),
+    )
 
 
 def build_feed(
@@ -539,6 +641,7 @@ def build_feed(
         subtitle=feed_subtitle(members, name),
         agencies=agencies,
         bbox=feed_bbox(found),
+        zips=tuple(sorted({c.sha256 for c in found if c.outcome == "ok" and c.sha256})),
     )
 
 
@@ -653,6 +756,7 @@ def build_feeds(
     results: dict[str, CheckResult],
     existing: dict[str, set[str]],
     contents: dict[str, FeedContent] | None = None,
+    fingerprint: Callable[[str], FeedFingerprint | None] = no_fingerprint,
 ) -> list[Feed]:
     groups = group(rows, contents)
     ids = assign_ids([[row.source_id for row in g] for g in groups], existing)
@@ -661,9 +765,25 @@ def build_feeds(
         for feed_id, g in zip(ids, groups, strict=True)
     ]
     told = tell_apart(built, groups, contents)
-    found = overlaps(told)
+    found = overlaps(told, fingerprint)
     told = [replace(feed, overlaps=found.get(feed.feed_id, ())) for feed in told]
     return sorted(told, key=lambda feed: feed.feed_id)
+
+
+def fingerprint_reader(store: ObjectStore) -> Callable[[str], FeedFingerprint | None]:
+    """The stored fingerprint of a zip by sha256; None when there is none or
+    another FINGERPRINT_VERSION wrote it."""
+
+    def read(sha: str) -> FeedFingerprint | None:
+        try:
+            return from_parquet(store.get(fingerprint_key(sha)))
+        except ObjectNotFound:
+            return None
+        except ValueError as exc:
+            log.warning("fingerprint of %s unreadable: %s", sha, exc)
+            return None
+
+    return read
 
 
 def load_names() -> dict[str, str]:
@@ -698,7 +818,13 @@ def feeds(
 ) -> list[Feed]:
     existing = load_existing() if settings.database_url else {}
     before = load_names() if settings.database_url else {}
-    result = build_feeds(sources, endpoint_checks, existing, feed_contents)
+    zip_settings = ZipStoreSettings()
+    if zip_settings.s3_endpoint:
+        fingerprint = fingerprint_reader(ObjectStore(zip_settings))
+    else:
+        log.warning("ZIPS_S3_ENDPOINT is unset; overlaps by agency name only")
+        fingerprint = no_fingerprint
+    result = build_feeds(sources, endpoint_checks, existing, feed_contents, fingerprint)
     if settings.database_url:
         persist(result)
     else:
@@ -706,6 +832,12 @@ def feeds(
 
     clean_joins = len(group(sources, feed_contents, clean=False)) - len(result)
     kinds = Counter(o.kind for feed in result for o in feed.overlaps)
+    scored = sum(
+        1
+        for feed in result
+        for o in feed.overlaps
+        if any(x is not None for x in o.scores)
+    )
     renamed = sorted(
         (feed.feed_id, before[feed.feed_id], feed.name)
         for feed in result
@@ -724,6 +856,7 @@ def feeds(
             "multi_agency": sum(1 for feed in result if len(feed.agencies) > 1),
             "with_overlaps": sum(1 for feed in result if feed.overlaps),
             **{f"overlaps_{kind}": count for kind, count in sorted(kinds.items())},
+            "overlaps_scored": scored,
             "renamed": len(renamed),
             "renames": MetadataValue.md(_renames_table(renamed)),
         }

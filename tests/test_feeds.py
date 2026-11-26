@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from gtfs_zone_feed_fetch.fingerprint import AgencyFingerprint, FeedFingerprint
 from sqlalchemy import select
 
 from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP, fold, record
@@ -13,6 +14,7 @@ from gtfs_zone_feed_catalog.assets.feeds import (
     CONTAINS,
     PARTIAL,
     SHARES,
+    Feed,
     Overlap,
     assign_ids,
     build_feeds,
@@ -600,12 +602,104 @@ def test_an_aggregate_contains_the_feeds_whose_agencies_it_has():
     far = by_url["https://far.org/g.zip"]
 
     assert set(agg.overlaps) == {
-        Overlap(city.feed_id, CONTAINS, ("City Bus",)),
-        Overlap(nb.feed_id, SHARES, ("Rail Co",)),
+        Overlap(city.feed_id, CONTAINS, ("City Bus",), (None,)),
+        Overlap(nb.feed_id, SHARES, ("Rail Co",), (None,)),
     }
-    assert city.overlaps == (Overlap(agg.feed_id, CONTAINED_IN, ("city bus",)),)
-    assert nb.overlaps == (Overlap(agg.feed_id, SHARES, ("Rail Co",)),)
+    assert city.overlaps == (
+        Overlap(agg.feed_id, CONTAINED_IN, ("city bus",), (None,)),
+    )
+    assert nb.overlaps == (Overlap(agg.feed_id, SHARES, ("Rail Co",), (None,)),)
     assert far.overlaps == ()
+
+
+def printed(
+    **agencies: list[tuple[tuple[int, int], tuple[int, int]]],
+) -> FeedFingerprint:
+    """A fingerprint with each agency's edges between (row, column) cells."""
+
+    def at(row: int, column: int) -> int:
+        return row << 32 | column
+
+    return FeedFingerprint(
+        agencies=tuple(
+            AgencyFingerprint(
+                agency_id=name,
+                name=name,
+                cells=frozenset(),
+                edges=frozenset(at(*a) << 64 | at(*b) for a, b in edges),
+            )
+            for name, edges in agencies.items()
+        ),
+        reappearances=0,
+    )
+
+
+LINE = [((10, i), (10, i + 1)) for i in range(0, 200, 2)]
+
+
+def scored_feeds(prints: dict[str, FeedFingerprint]) -> dict[str, Feed]:
+    """The aggregate test's feeds, with the agg, city and nb zips fingerprinted
+    by `prints` (by sha256)."""
+    rows = [
+        row("md:mdb-1:static", kind="static", scheduled="https://agg.org/all.zip"),
+        row("md:mdb-2:static", kind="static", scheduled="https://city.org/g.zip"),
+        row("md:mdb-3:static", kind="static", scheduled="https://nb.org/g.zip"),
+    ]
+    facts = {
+        "agg": ([0, 0, 10, 10], ("City_Bus", "Rail_Co")),
+        "city": ([1, 1, 2, 2], ("City_Bus",)),
+        "nb": ([3, 3, 4, 4], ("Rail_Co", "Ferry")),
+    }
+    contents = {
+        f"https://{host}.org/{'all' if host == 'agg' else 'g'}.zip": content(
+            f"https://{host}.org/{'all' if host == 'agg' else 'g'}.zip",
+            sha256=host,
+            agencies=agencies(*names),
+            location={"bbox": box},
+        )
+        for host, (box, names) in facts.items()
+    }
+    feeds = build_feeds(rows, {}, {}, contents, prints.get)
+    return {feed.zips[0]: feed for feed in feeds}
+
+
+def test_a_shared_agency_whose_edges_do_not_match_is_dropped():
+    # City_Bus runs the same line in agg and city; Rail_Co shares no edge.
+    elsewhere = [((50, i), (50, i + 1)) for i in range(0, 200, 2)]
+    feeds = scored_feeds(
+        {
+            "agg": printed(City_Bus=LINE, Rail_Co=LINE[:10]),
+            "city": printed(City_Bus=LINE[:50]),
+            "nb": printed(Rail_Co=elsewhere, Ferry=elsewhere),
+        }
+    )
+    agg, city, nb = feeds["agg"], feeds["city"], feeds["nb"]
+    assert agg.overlaps == (Overlap(city.feed_id, CONTAINS, ("City_Bus",), (1.0,)),)
+    assert city.overlaps == (Overlap(agg.feed_id, CONTAINED_IN, ("City_Bus",), (1.0,)),)
+    assert nb.overlaps == ()
+
+
+def test_containment_is_of_the_side_with_fewer_edges_within_one_cell():
+    # nb's Rail_Co is one row off agg's on 30 of its 40 edges, far off on 10.
+    near = [((11, c), (11, d)) for (_, c), (_, d) in LINE[:30]]
+    far = [((80, c), (80, d)) for (_, c), (_, d) in LINE[:10]]
+    feeds = scored_feeds(
+        {
+            "agg": printed(City_Bus=LINE, Rail_Co=LINE),
+            "city": printed(City_Bus=LINE),
+            "nb": printed(Rail_Co=near + far, Ferry=far),
+        }
+    )
+    (overlap,) = feeds["nb"].overlaps
+    assert overlap.kind == SHARES
+    assert overlap.scores == (0.75,)
+
+
+def test_a_feed_without_a_fingerprint_keeps_the_name_match():
+    feeds = scored_feeds({"agg": printed(City_Bus=LINE, Rail_Co=LINE)})
+    assert feeds["city"].overlaps == (
+        Overlap(feeds["agg"].feed_id, CONTAINED_IN, ("City_Bus",), (None,)),
+    )
 
 
 def test_a_multi_agency_feed_keeps_its_catalog_name():
