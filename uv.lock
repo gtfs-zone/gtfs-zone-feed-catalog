@@ -721,7 +721,7 @@ dev = [
 [[package]]
 name = "gtfs-zone-feed-fetch"
 version = "0.8.1"
-source = { git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.8.1#e48f5fe1fda784e15089dca93a231ac7e731c406" }
+source = { git = "https://github.com/gtfs-zone/gtfs-zone-feed-fetch.git?tag=v0.8.1#ea064dcfd7209ef5fd5012d09d86b89d592fadc5" }
 dependencies = [
     { name = "babel" },
     { name = "httpx" },
