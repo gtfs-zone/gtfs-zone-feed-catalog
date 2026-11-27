@@ -1,3 +1,9 @@
+## v0.21.0 (2026-11-27)
+
+### Feat
+
+- **feeds**: overlaps keep a shared agency only when its fingerprint edge containment reaches 0.01, scores in feeds.json
+
 ## v0.20.1 (2026-11-25)
 
 ### Fix
