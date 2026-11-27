@@ -56,10 +56,10 @@ class Source:
     """One selectable endpoint set, from one catalog."""
 
     source_id: str
-    catalog: Literal["transitland", "mobilitydatabase", "gtfszone", "ntd"]
+    catalog: Literal["transitland", "mobilitydatabase", "ntd", "transitous"]
     kind: Kind
-    # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, a
-    # rt-api feed name, or an NTD id with a hash of the weblink.
+    # The catalog's own id, unnamespaced: a DMFR onestop id, an mdb-NNNN, an
+    # NTD id with a hash of the weblink, or a Transitous <region>/<name>.
     feed_id: str
     name: str
     operator_name: str = ""
@@ -78,8 +78,13 @@ class Source:
     # one. Not a merge: both rows stay, cross-referenced.
     same_endpoint_as: tuple[str, ...] = ()
     # Realtime only: the catalog feed ids of the static feeds this endpoint
-    # describes, an mdb-NNNN or a DMFR onestop id of the same catalog.
+    # describes, an mdb-NNNN or a DMFR onestop id of the same catalog. A
+    # Transitous row of either kind instead names the feed it lists in another
+    # catalog, as `md:<mdb id>` or `tl:<onestop id>`.
     feed_references: tuple[str, ...] = ()
+    # Why the catalog lists the row but does not use it. Such a row is
+    # neither checked nor fetched.
+    skip_reason: str = ""
 
     @property
     def roles(self) -> tuple[str, ...]:
@@ -90,6 +95,19 @@ class Source:
 
     def with_links(self, links: tuple[str, ...]) -> Source:
         return replace(self, same_endpoint_as=links)
+
+
+# Source id prefix of the static rows each catalog's feed_references name.
+REFERENCE_PREFIXES = {"mobilitydatabase": "md", "transitland": "tl"}
+
+
+def reference_targets(row: Source, ref: str) -> tuple[str, ...]:
+    """The source ids one of `row`'s feed_references may name. A Transitous
+    reference names another catalog's feed, whichever kind its rows are."""
+    if row.catalog == "transitous":
+        return (f"{ref}:static", f"{ref}:rt")
+    prefix = REFERENCE_PREFIXES.get(row.catalog)
+    return (f"{prefix}:{ref}:static",) if prefix else ()
 
 
 def make_rows(
@@ -109,7 +127,8 @@ def make_rows(
 ) -> list[Source]:
     """Split one catalog feed into its static and rt rows.
 
-    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``gz``, ``ntd``). A
+    ``id_prefix`` is the catalog namespace (``tl``, ``md``, ``ntd``,
+    ``transitous``). A
     static row's id ends ``:static`` and an rt row's ``:rt`` only where one feed
     can produce both; the Mobility Database gives realtime its own mdb id, so
     it passes the kind suffix it wants in ``feed_id``.

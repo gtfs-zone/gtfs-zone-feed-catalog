@@ -9,9 +9,9 @@ order:
 |---|---|
 | `transitland_atlas` | Parse the DMFR corpus: a sibling checkout in dev, the GitHub tree API in the cluster |
 | `mobility_database` | Exchange the refresh token at `POST /v1/tokens/access`, then page `/v1/gtfs_feeds` and `/v1/gtfs_rt_feeds` |
-| `rt_api` | The feeds rt.gtfs.zone serves, from rt-api's public `GET /feeds` (`RT_API_CATALOG_URL`) |
 | `ntd` | FTA's NTD GTFS weblinks, one GET of the SODA3 view (`NTD_WEBLINKS_URL`); one static row per NTD id and normalized weblink |
-| `sources` | One row per source kind, ids namespaced by catalog, cross-linked by URL with http and https unified |
+| `transitous` | Transitous' region files (`feeds/*.json`), read in memory from one GET of the repository tarball (`TRANSITOUS_URL`); one row per GTFS or GTFS-RT source, id `transitous:<region>/<name>:<kind>`, place from the region code; GBFS, SIRI, NeTEx and non-http(s) URLs skipped. A `mobility-database` / `transitland-atlas` source has no URL and references that catalog's feed; a `skip: true` source is kept with its `skip_reason` and neither checked nor fetched |
+| `sources` | One row per source kind, ids namespaced by catalog, cross-linked by URL with http and https unified; Transitous rows whose references name no listed row are dropped |
 | `feed_fetch` | Conditional GET of every static URL; the latest body per URL in the private schedule bucket (see [Schedule store](#schedule-store)); the response is that URL's check |
 | `endpoint_checks` | HEAD (ranged GET on fallback) every download URL `feed_fetch` did not request; size (static only), `Last-Modified`, `ETag` |
 | `check_history` | Fold the checks into one answer per source; record each URL's check and state changes in Postgres |
@@ -29,8 +29,8 @@ The published documents, all shaped in `artifacts.py`:
 
 | Artifact | What it holds |
 |---|---|
-| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name, sorted by it), `agencyKeys` (those normalized names, same order: lowercase, no accents or punctuation, spaces collapsed; what `overlaps` and agency pages match on), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
-| `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json` |
+| `feeds.json` | One entry per logical feed: `members` (row ids), `urls` (role to URLs, best first), `state`, `roleState`, `auth` (roles only behind a key), `staticBytes`, `lastModified`, `since`, `neverUp` (down, and never seen up by any check), `content` (last download's outcome and, when ok, service range, publisher, version and counts), `licenses` (members' license URLs), `catalogLinks` (members' Transitland / Mobility Database pages and Transitous region files), `agencies` and `agencyCount` (over every scheduled URL, one per normalized name, sorted by it), `agencyKeys` (those normalized names, same order: lowercase, no accents or punctuation, spaces collapsed; what `overlaps` and agency pages match on), `overlaps` (`feedId`, `kind`: `contains` / `containedIn` / `shares`, shared `agencies`), place. Top-level `moved`: an absent feed id to the present feed its members joined. What a load list reads |
+| `sources.json` | The raw catalog rows, field-compatible with the old `atlas-feeds.json`; `feed_references` (what a realtime or Transitous row references) and `skip_reason` (a row its catalog lists but does not use) when set |
 | `status.json` | Per-row check facts (code, error, latency, failures, since, never_up); also what a snapshot hashes |
 | `search.json` | `feeds.json` cut down, with short keys, to what a feed picker lists and searches: name, subtitle, alt names (rows', operators', agencies'), place, place tags (`pt`: the countries, regions and municipalities of the feed's stations, from `feed_contents`, minus the place's parts), state, `roleState`, URLs, auth, size, date, agency count (`ac`), overlaps (`ov`: `[feedId, kind]`). What every app's picker and list.gtfs.zone's first paint fetch |
 | `summary.json` | Counts by catalog, kind, state and country, for rows and under `feeds` for feeds |
@@ -41,8 +41,9 @@ The published documents, all shaped in `artifacts.py`:
 
 `sources.json`, `feeds.json` and `manifest.json` carry a top-level `attribution`
 (`artifacts.ATTRIBUTION`): Transitland Atlas is CC-BY 4.0 and must be credited
-with a link; the Mobility Database catalog is CC0; the NTD weblinks are a US
-government work, credited to the Federal Transit Administration. Feed contents
+with a link; the Mobility Database catalog and Transitous' feed lists are CC0
+(Transitous is credited anyway); the NTD weblinks are a US government work,
+credited to the Federal Transit Administration. Feed contents
 are licensed by their publishers. `search.json` carries the same block plus
 `places`, the credit for its municipality tags (Overture Maps, from
 OpenStreetMap, ODbL).
@@ -90,7 +91,7 @@ shared with the other pipelines that read the bucket.
 ## Logical feeds
 
 Catalog rows stay the raw layer; `feeds` builds on top of them. A union-find
-joins rows on exactly seven kinds of evidence:
+joins rows on exactly eight kinds of evidence:
 
 - a shared URL (http and https unified), any kind, any catalog;
 - byte-identical schedules: scheduled URLs whose stored zip has the same
@@ -100,13 +101,18 @@ joins rows on exactly seven kinds of evidence:
   column order, BOM, CRLF, quoting and zip layout ignored, ids and column sets
   kept);
 - an MDB realtime row's `feed_references` to an MDB static row;
+- a Transitous row's reference (`mdb-id`, `transitland-atlas-id`) to that
+  catalog feed's rows, of either kind;
 - a Transitland realtime feed to its operator's schedule, when the operator
   (top-level or nested in a feed) has exactly one schedule and every operator
   of the realtime feed names the same one;
 - realtime URLs on the same host and path differing only in a final
   `vehicles`/`vehiclepositions`/`trips`/`tripupdates`/`alerts`/`servicealerts`
   segment (case, `_`/`-` and extension ignored; the query must match);
-- the static and rt rows one catalog feed was split into.
+- the static and rt rows one catalog feed was split into. A Transitous
+  catalog feed is the sources of one name in a region, which is how
+  Transitous pairs realtime with a schedule; a realtime URL listed under more
+  than one name pairs with none of them.
 
 No fuzzy name matching and no override file yet, so the rules **can
 false-merge** (a regional schedule that several agencies' realtime feeds all
@@ -164,9 +170,9 @@ not hidden.
 | `SNAPSHOT_DAILY_DAYS` | Days of daily snapshots kept in full (default 30) |
 | `SNAPSHOT_WEEKLY_DAYS` | Days after which snapshots thin to one per month (default 365) |
 | `CONTENT_REPORT_BASE` | Where timetable-sites's `_content/index.json` is served (default `https://sites.gtfs.zone/`), the fallback for URLs `feed_facts` has nothing on; blank skips it |
-| `RT_API_CATALOG_URL` | rt-api's public feed catalog (default `https://rt.gtfs.zone/feeds`); blank skips it |
 | `NTD_WEBLINKS_URL` | NTD GTFS weblinks SODA3 view, fetched with a bare GET (default `https://data.transportation.gov/api/v3/views/2u7n-ub22/query.json`); blank skips it |
 | `NTD_APP_TOKEN` | Optional Socrata app token, sent as `X-App-Token`; never logged |
+| `TRANSITOUS_URL` | Transitous repository tarball (default `https://codeload.github.com/public-transport/transitous/tar.gz/refs/heads/main`); blank skips it |
 | `GATUS_URL` | Gatus base URL; after a successful publish the run pushes a heartbeat there. Blank skips it |
 | `GATUS_ENDPOINT_KEY` | Gatus external endpoint key (default `data_catalog-publish`) |
 | `GATUS_TOKEN` | Bearer token for that external endpoint |

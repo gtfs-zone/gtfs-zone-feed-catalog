@@ -221,12 +221,15 @@ def check_targets(rows: list[Source]) -> tuple[dict[str, str], dict[str, CheckRe
     Returns the checkable targets (normalized key -> one raw URL to request) and
     the already-decided skips. A URL that only ever appears on a feed needing an
     API key we do not hold is skipped rather than checked into a guaranteed 401.
+    A row its catalog skips contributes no URL.
     """
     targets: dict[str, str] = {}
     needs_auth: dict[str, str] = {}
     relative: dict[str, str] = {}
 
     for row in rows:
+        if row.skip_reason:
+            continue
         for role in row.roles:
             url = row.urls.get(role, "")
             if not url:

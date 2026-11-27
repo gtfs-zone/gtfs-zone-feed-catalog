@@ -231,7 +231,7 @@ def build_realtime_sources(feeds: Iterator[dict] | list[dict]) -> list[Source]:
 def mobility_database() -> list[Source]:
     if not settings.mobility_db_refresh_token:
         # Not a failure: a developer without the token still gets a usable run
-        # off Transitland and rt-api.
+        # off the other catalogs.
         log.warning("MOBILITY_DB_REFRESH_TOKEN is unset; skipping the catalog")
         return []
 

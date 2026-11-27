@@ -38,8 +38,8 @@ def row(source_id: str, kind: str = "rt", **urls: str) -> Source:
         catalog={
             "tl": "transitland",
             "md": "mobilitydatabase",
-            "gz": "gtfszone",
             "ntd": "ntd",
+            "transitous": "transitous",
         }[catalog],
         kind=kind,
         feed_id=feed_id,
@@ -207,10 +207,10 @@ def test_two_feeds_joined_again_take_the_lower_id():
 def test_name_prefers_an_operator_then_a_provider_then_the_agency():
     tl = row("tl:f-a:static", kind="static", scheduled="https://a.org/g.zip")
     md = row("md:mdb-1:static", kind="static", scheduled="https://a.org/g.zip")
-    gz = row("gz:a:static", kind="static", scheduled="https://a.org/g.zip")
+    ntd = row("ntd:a:static", kind="static", scheduled="https://a.org/g.zip")
     # No operator or provider anywhere: a Mobility Database name, then any.
-    assert build_feeds([tl, gz], {}, {})[0].name == "gz:a:static"
-    assert build_feeds([tl, md, gz], {}, {})[0].name == "md:mdb-1:static"
+    assert build_feeds([tl, ntd], {}, {})[0].name == "ntd:a:static"
+    assert build_feeds([tl, md, ntd], {}, {})[0].name == "md:mdb-1:static"
 
     content = FeedContent(
         url="https://a.org/g.zip",
@@ -313,7 +313,7 @@ def test_role_state_is_usable_when_any_url_answers():
 
 
 def test_a_feed_with_nothing_checked_is_unknown():
-    (feed,) = build_feeds([row("gz:a:rt", vehicles="/amtrak/vp.pb")], {}, {})
+    (feed,) = build_feeds([row("transitous:a:rt", vehicles="/amtrak/vp.pb")], {}, {})
     assert feed.state == UNKNOWN
     assert feed.role_state == {"vehicles": UNKNOWN}
 

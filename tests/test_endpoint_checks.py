@@ -140,8 +140,8 @@ def test_a_feed_needing_an_api_key_is_skipped_not_failed():
 
 def test_path_only_urls_are_skipped_as_relative():
     row = Source(
-        source_id="gz:amtrak:rt",
-        catalog="gtfszone",
+        source_id="tl:amtrak:rt",
+        catalog="transitland",
         kind="rt",
         feed_id="amtrak",
         name="amtrak",

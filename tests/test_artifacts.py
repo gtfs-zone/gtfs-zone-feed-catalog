@@ -145,6 +145,7 @@ def test_sources_and_feeds_credit_every_catalog_and_its_license():
             "Transitland Atlas": "CC-BY-4.0",
             "Mobility Database": "CC0-1.0",
             "National Transit Database (FTA)": "Public Domain U.S. Government",
+            "Transitous": "CC0-1.0",
         }
 
 

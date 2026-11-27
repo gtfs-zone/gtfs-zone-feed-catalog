@@ -3,8 +3,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/gtfs-zone/gtfs-zone-feed-catalog/check.yml?branch=main&label=CI)](https://github.com/gtfs-zone/gtfs-zone-feed-catalog/actions/workflows/check.yml?query=branch%3Amain) [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE.txt) [![Container image](https://img.shields.io/badge/image-ghcr.io-blue?logo=docker&logoColor=white)](https://github.com/gtfs-zone/gtfs-zone-feed-catalog/pkgs/container/gtfs-zone-feed-catalog)
 
 Dagster pipeline that inventories the world of GTFS. It ingests the Transitland
-Atlas DMFR corpus, the Mobility Database and the FTA National Transit Database's
-GTFS weblinks daily, checks whether each feed
+Atlas DMFR corpus, the Mobility Database, the FTA National Transit Database's
+GTFS weblinks and Transitous' feed lists daily, checks whether each feed
 endpoint still answers, keeps the history in Postgres, and publishes public JSON
 artifacts to object storage at `data.gtfs.zone`.
 
@@ -36,8 +36,8 @@ at a sibling checkout of `transitland/transitland-atlas` so runs read the DMFR
 corpus from disk rather than the GitHub API.
 
 Without `DATABASE_URL` the run still works and still publishes; it just keeps no
-history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland and
-rt-api's catalog alone. Neither is an error, so a first local run needs neither.
+history. Without `MOBILITY_DB_REFRESH_TOKEN` it runs on Transitland, the NTD
+and Transitous alone. Neither is an error, so a first local run needs neither.
 
 Trigger the first run from the Dagster UI rather than waiting for the schedule.
 

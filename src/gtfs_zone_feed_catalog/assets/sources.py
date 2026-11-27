@@ -1,6 +1,6 @@
 """Every catalog merged into one list - cross-linked, not collapsed.
 
-Transitland, the Mobility Database, rt-api and the NTD describe overlapping
+Transitland, the Mobility Database, the NTD and Transitous describe overlapping
 worlds with different ids, different names and different metadata, and none is
 a superset of the others. Collapsing them would mean choosing whose name and
 whose id wins for every overlap, and quietly losing the loser. So every row
@@ -22,7 +22,7 @@ from collections import defaultdict
 
 from dagster import asset
 
-from gtfs_zone_feed_catalog.catalog import Source
+from gtfs_zone_feed_catalog.catalog import Source, reference_targets
 from gtfs_zone_feed_catalog.urls import link_key
 
 log = logging.getLogger(__name__)
@@ -70,16 +70,38 @@ def merge(*groups: list[Source]) -> list[Source]:
     return sorted(by_id.values(), key=lambda r: r.source_id)
 
 
+def drop_dangling(rows: list[Source]) -> list[Source]:
+    """`rows` without the URL-less rows whose every reference names a row that
+    is not listed (a GBFS feed, or a catalog skipped this run): such a row
+    describes nothing that can be checked or joined."""
+    ids = {row.source_id for row in rows}
+    kept = [
+        row
+        for row in rows
+        if row.urls
+        or any(
+            target in ids
+            for ref in row.feed_references
+            for target in reference_targets(row, ref)
+        )
+    ]
+    if dropped := len(rows) - len(kept):
+        log.info("dropped %d rows whose references are not listed", dropped)
+    return kept
+
+
 @asset(
     description="Every catalog's rows, deduplicated, cross-linked and placed",
 )
 def sources(
     transitland_atlas: list[Source],
     mobility_database: list[Source],
-    rt_api: list[Source],
     ntd: list[Source],
+    transitous: list[Source],
 ) -> list[Source]:
-    rows = cross_link(merge(transitland_atlas, mobility_database, rt_api, ntd))
+    rows = cross_link(
+        drop_dangling(merge(transitland_atlas, mobility_database, ntd, transitous))
+    )
 
     placed = sum(1 for row in rows if row.place.placed)
     cross_linked = sum(1 for row in rows if row.same_endpoint_as)

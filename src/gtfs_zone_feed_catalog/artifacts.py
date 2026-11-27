@@ -8,7 +8,7 @@ shape of what consumers fetch is testable without a bucket.
 `vehiclesUrl`, `tripUpdatesUrl`, `alertsUrl`) as a compatible subset, so a
 consumer moves over by changing where it fetches rather than how it reads. The
 new fields sit alongside in snake_case. ``rowId`` values are now namespaced by
-catalog (`tl:`, `md:`, `gz:`, `ntd:`), which is the one deliberate break.
+catalog (`tl:`, `md:`, `ntd:`, `transitous:`), which is the one deliberate break.
 
 ``feeds.json`` is the layer consumers list: one entry per logical feed, which
 references its rows by ``rowId``. ``search.json`` is the same feeds cut down to
@@ -29,6 +29,7 @@ from gtfs_zone_feed_fetch.localities import ATTRIBUTION as LOCALITIES_ATTRIBUTIO
 
 from gtfs_zone_feed_catalog.assets.feeds import links, normalize_agency
 from gtfs_zone_feed_catalog.assets.source_overlap import overlap
+from gtfs_zone_feed_catalog.assets.transitous import REGION_FILE_BASE
 from gtfs_zone_feed_catalog.catalog import ATLAS_URL_KEYS, Place, Source
 from gtfs_zone_feed_catalog.urls import normalize_url
 
@@ -53,8 +54,8 @@ TRANSITLAND_FEED_BASE = "https://www.transit.land/feeds/"
 MOBILITYDATABASE_FEED_BASE = "https://mobilitydatabase.org/feeds/"
 
 # Carried at the top of sources.json, feeds.json and manifest.json. The Atlas
-# is CC-BY 4.0 and asks for a link; the Mobility Database catalog is CC0; the
-# NTD weblinks are a US government work.
+# is CC-BY 4.0 and asks for a link; the Mobility Database catalog and
+# Transitous' feed lists are CC0; the NTD weblinks are a US government work.
 ATTRIBUTION: dict[str, Any] = {
     "catalogs": [
         {
@@ -74,6 +75,12 @@ ATTRIBUTION: dict[str, Any] = {
             "url": "https://data.transportation.gov/d/2u7n-ub22",
             "license": "Public Domain U.S. Government",
             "licenseUrl": "https://www.usa.gov/government-works",
+        },
+        {
+            "name": "Transitous",
+            "url": "https://github.com/public-transport/transitous",
+            "license": "CC0-1.0",
+            "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
         },
     ],
     "feeds": (
@@ -120,6 +127,8 @@ def catalog_url(row: Source) -> str | None:
     if row.catalog == "mobilitydatabase":
         kind = "gtfs_rt" if row.kind == "rt" else "gtfs"
         return f"{MOBILITYDATABASE_FEED_BASE}{kind}/{row.feed_id}"
+    if row.catalog == "transitous":
+        return f"{REGION_FILE_BASE}{row.feed_id.split('/', 1)[0]}.json"
     return None
 
 
@@ -146,6 +155,10 @@ def source_row(source: Source, status: SourceStatus | None) -> dict[str, Any]:
         row["auth"] = source.authentication_type
     if source.license_url:
         row["license_url"] = source.license_url
+    if source.feed_references:
+        row["feed_references"] = list(source.feed_references)
+    if source.skip_reason:
+        row["skip_reason"] = source.skip_reason
     if status is not None:
         row["state"] = status.state
     return row

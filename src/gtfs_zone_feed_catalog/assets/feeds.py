@@ -11,7 +11,9 @@ union-find over six kinds of evidence, and nothing else:
 - identical cleaned data: readable schedules with trips and the same ``cleanedHash``
   (every GTFS file but feed_info, ignoring row and column order and packaging);
 - a realtime row's ``feed_references`` to a static row of its catalog: a
-  Mobility Database reference, or a Transitland operator's only schedule;
+  Mobility Database reference, or a Transitland operator's only schedule; and
+  a Transitous row's reference to the Mobility Database or Transitland row it
+  lists;
 - realtime URLs that differ only in a final entity-type segment
   (``x/vehicles``, ``x/trips``, ``x/alerts``), see ``urls.rt_sibling_key``;
 - the static and realtime rows one catalog feed was split into.
@@ -50,7 +52,7 @@ from gtfs_zone_feed_catalog.assets.check_history import DOWN, UNKNOWN, UP
 from gtfs_zone_feed_catalog.assets.endpoint_checks import CheckResult, result_key
 from gtfs_zone_feed_catalog.assets.feed_contents import FeedContent
 from gtfs_zone_feed_catalog.assets.transitland_atlas import humanize_feed_id
-from gtfs_zone_feed_catalog.catalog import RT_ROLES, Place, Source
+from gtfs_zone_feed_catalog.catalog import RT_ROLES, Place, Source, reference_targets
 from gtfs_zone_feed_catalog.database import get_session_factory
 from gtfs_zone_feed_catalog.history.models import FeedMember, FeedRecord, SourceRecord
 from gtfs_zone_feed_catalog.settings import settings
@@ -60,9 +62,6 @@ log = logging.getLogger(__name__)
 
 # A feed whose schedule answers but some realtime role does not.
 PARTIAL = "partial"
-
-# Source id prefix of the static rows each catalog's feed_references name.
-REFERENCE_PREFIXES = {"mobilitydatabase": "md", "transitland": "tl"}
 
 # Overlap kinds, from the point of view of the feed that lists the overlap.
 CONTAINS = "contains"
@@ -177,10 +176,10 @@ def links(
                 found[("clean", h)].append(row.source_id)
             if role in RT_ROLES and (sibling := rt_sibling_key(url)):
                 found[("rt", sibling)].append(row.source_id)
-        prefix = REFERENCE_PREFIXES.get(row.catalog)
-        for ref in row.feed_references if prefix else ():
-            if (target := f"{prefix}:{ref}:static") in by_id:
-                found[("ref", row.source_id, ref)] += [row.source_id, target]
+        for ref in row.feed_references:
+            for target in reference_targets(row, ref):
+                if target in by_id:
+                    found[("ref", row.source_id, ref)] += [row.source_id, target]
     return found
 
 

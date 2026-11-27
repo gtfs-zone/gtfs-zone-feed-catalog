@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     mobility_db_refresh_token: str = ""
     mobility_db_base_url: str = "https://api.mobilitydatabase.org/v1"
 
-    # rt-api's public feed catalog: the feeds rt.gtfs.zone serves itself.
-    # Empty skips it.
-    rt_api_catalog_url: str = "https://rt.gtfs.zone/feeds"
+    # Transitous' repository tarball, read for its feeds/*.json. Empty skips it.
+    transitous_url: str = (
+        "https://codeload.github.com/public-transport/transitous/tar.gz/refs/heads/main"
+    )
 
     # FTA's NTD GTFS weblinks dataset, a bare GET of its SODA3 view. Empty
     # skips it. The token is optional, sent as X-App-Token, and never logged.

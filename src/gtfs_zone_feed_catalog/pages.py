@@ -89,8 +89,8 @@ SNIFF_LABELS = {
 CATALOG_LABELS = {
     "transitland": "Transitland",
     "mobilitydatabase": "Mobility Database",
-    "gtfszone": "rt.gtfs.zone",
     "ntd": "National Transit Database",
+    "transitous": "Transitous",
 }
 
 
